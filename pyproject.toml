@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Neuro-Symbolic Z3 Hardware Pin Validator (LLM-Modulo) for Microcontrollers"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["z3-solver>=4.12.0"]
+dependencies = ["z3-solver>=4.12.0", "tree-sitter>=0.23.0", "tree-sitter-cpp>=0.23.0"]
 
 [project.scripts]
 mcu-validate = "mcu_validator.cli:main"
