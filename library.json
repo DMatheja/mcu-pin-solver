@@ -1,0 +1,22 @@
+{
+  "name": "mcu-pin-solver",
+  "version": "0.1.0",
+  "description": "Neuro-Symbolic Z3 Hardware Pin Validator (LLM-Modulo) for ESP32-C3 and ESP32-S3",
+  "keywords": ["esp32", "esp32-c3", "esp32-s3", "z3", "verification", "llm", "pins"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DMatheja/mcu-pin-solver.git"
+  },
+  "authors": [
+    {
+      "name": "David Matheja",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": ["espressif32"],
+  "build": {
+    "extraScript": "pio_hook.py"
+  }
+}
