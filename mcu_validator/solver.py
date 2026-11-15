@@ -18,7 +18,7 @@ def validate_with_z3(requests, active_resources, board_data):
     aliases = board_data.get("capability_aliases", {})
     rules = board_data.get("conflict_rules", [])
 
-    # 1. Aktive Konfliktregeln auswerten
+    # 1. Evaluate active conflict rules
     forbidden_caps = set()
     forbidden_pins = set()
     for rule in rules:
@@ -28,7 +28,7 @@ def validate_with_z3(requests, active_resources, board_data):
             if "forbidden_pins" in rule:
                 forbidden_pins.update(rule["forbidden_pins"])
 
-    # 2. Konflikte im aktuellen Code prüfen
+    # 2. Check current pin assignments for conflicts
     conflicts = []
     seen_pins = {}
     for req in requests:
@@ -57,7 +57,7 @@ def validate_with_z3(requests, active_resources, board_data):
     if not conflicts:
         return True, [], {r["name"]: r["pin"] for r in requests}
 
-    # 3. Z3 Optimize (MaxSMT): Minimal-invasive Reparatur berechnen
+    # 3. Z3 Optimize (MaxSMT): Compute a minimal-invasive pin reassignment
     opt = Optimize()
     z3_vars = {}
     for req in requests:
@@ -77,10 +77,10 @@ def validate_with_z3(requests, active_resources, board_data):
         else:
             opt.add(var == -1)
 
-        # Soft Constraint 1 (Gewicht 100): Gültige Original-Pins der KI möglichst beibehalten
+        # Soft Constraint 1 (weight 100): Keep valid original pins unchanged whenever possible
         opt.add_soft(var == req["pin"], weight=100)
 
-        # Soft Constraint 2 (Gewicht 10): Strapping-Pins bei Neuvergabe meiden
+        # Soft Constraint 2 (weight 10): Avoid boot/strapping pins during reassignment
         for p in allowed_pins:
             if pins_db[p].get("strapping"):
                 opt.add_soft(var != p, weight=10)

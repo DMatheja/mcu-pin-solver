@@ -4,15 +4,15 @@ from pathlib import Path
 # Extracts pin assignments and active peripherals from a C/C++ sketch file
 def parse_cpp_file(cpp_path):
     code = Path(cpp_path).read_text(encoding="utf-8")
-    # Kommentare entfernen (Single-Line und Multi-Line)
+    # Strip single-line and multi-line comments
     code = re.sub(r"//.*?$", "", code, flags=re.MULTILINE)
     code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
 
     pins_in_code = {}
-    # Findet #define PIN_NAME 12
+    # Match #define PIN_NAME 12
     for match in re.finditer(r"#define\s+(\w+)\s+(\d+)", code):
         pins_in_code[match.group(1)] = int(match.group(2))
-    # Findet int PIN_NAME = 12; oder const int / uint8_t / constexpr
+    # Match int / const int / uint8_t / constexpr declarations
     for match in re.finditer(r"(?:const\s+|constexpr\s+)?(?:int|uint8_t)\s+(\w+)\s*=\s*(\d+)", code):
         pins_in_code[match.group(1)] = int(match.group(2))
 

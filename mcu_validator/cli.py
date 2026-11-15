@@ -39,7 +39,7 @@ def validate_file(cpp_path, board_id="esp32-c3"):
     return is_valid, report
 
 def main():
-    cpp_file = sys.argv[1] if len(sys.argv) > 1 else "test_sketch.cpp"
+    cpp_file = sys.argv[1] if len(sys.argv) > 1 else "src/main.cpp"
     board_id = sys.argv[2] if len(sys.argv) > 2 else "esp32-c3"
     is_valid, report = validate_file(cpp_file, board_id)
     print(report)
