@@ -20,11 +20,11 @@ board = <your_board>
 framework = <your_framework>
 
 lib_deps =
-    https://github.com/DMatheja/mcu-pin-solver.git
+    dmatheja/mcu-pin-solver@^0.1.0
 extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py
 ```
 
-3. On a brand-new project, run `pio pkg install` once in the VS Code terminal so PlatformIO downloads the library into `.pio/libdeps/`, then click **Build (`✓`)**. Dependencies (`z3-solver`, `tree-sitter`, `tree-sitter-cpp`) install automatically on first run.
+3. On a brand-new project, run `pio pkg install` once in the VS Code terminal so PlatformIO downloads the library into `.pio/libdeps/`, then click **Build (`✓`)**. Dependencies (`z3-solver`, `tree-sitter`, `tree-sitter-cpp`) install automatically on first run. *(Or set `lib_deps = https://github.com/DMatheja/mcu-pin-solver.git` for bleeding-edge Git installs.)*
 
 ---
 
@@ -32,8 +32,8 @@ extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py
 
 | MCU | Rule File | Verified Hardware Rules | `platformio.ini` Configuration & Guide |
 | :--- | :--- | :--- | :--- |
-| **ESP32-C3** | `boards/esp32-c3.json` | • **Reserved Flash:** GPIO `12–17`<br>• **Strapping:** GPIO `2, 8, 9`<br>• **USB-Serial:** blocks GPIO `18, 19`<br>• **Wi-Fi active:** blocks `ADC2` (GPIO `5`), keeps `ADC1` (GPIO `0–4`)<br>• **Shared Bus:** `i2c`, `spi` | **Config:**<pre>[env:esp32-c3]<br>platform = espressif32<br>board = esp32-c3-devkitm-1<br>framework = arduino<br>monitor_speed = 115200<br>build_flags =<br>    -DARDUINO_USB_MODE=1<br>    -DARDUINO_USB_CDC_ON_BOOT=1<br>lib_deps =<br>    https://github.com/DMatheja/mcu-pin-solver.git<br>extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py</pre>**Guide:** Run `pio pkg install` once, then click **Build (`✓`)** or **Upload (`→`)**. *(Remove `build_flags` if your board uses an external CP2102/CH340 UART chip.)* |
-| **ESP32-S3** | `boards/esp32-s3.json` | • **Reserved Flash/PSRAM:** GPIO `26–37` *(GPIO `22–25` nonexistent)*<br>• **Strapping:** GPIO `0, 3, 45, 46`<br>• **USB-Serial:** blocks GPIO `19, 20`<br>• **Wi-Fi active:** blocks `ADC2` (GPIO `11–20`), keeps `ADC1` (GPIO `1–10`)<br>• **Shared Bus:** `i2c`, `spi` | **Config:**<pre>[env:esp32-s3]<br>platform = espressif32<br>board = esp32-s3-devkitc-1<br>framework = arduino<br>monitor_speed = 115200<br>build_flags =<br>    -DARDUINO_USB_MODE=1<br>    -DARDUINO_USB_CDC_ON_BOOT=1<br>lib_deps =<br>    https://github.com/DMatheja/mcu-pin-solver.git<br>extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py</pre>**Guide:** Run `pio pkg install` once, then click **Build (`✓`)** or **Upload (`→`)**. *(For UART-bridge USB ports on DevKitC-1, remove `build_flags` or connect to the native USB port.)* |
+| **ESP32-C3** | `boards/esp32-c3.json` | • **Reserved Flash:** GPIO `12–17`<br>• **Strapping:** GPIO `2, 8, 9`<br>• **USB-Serial:** blocks GPIO `18, 19`<br>• **Wi-Fi active:** blocks `ADC2` (GPIO `5`), keeps `ADC1` (GPIO `0–4`)<br>• **Shared Bus:** `i2c`, `spi` | **Config:**<pre>[env:esp32-c3]<br>platform = espressif32<br>board = esp32-c3-devkitm-1<br>framework = arduino<br>monitor_speed = 115200<br>build_flags =<br>    -DARDUINO_USB_MODE=1<br>    -DARDUINO_USB_CDC_ON_BOOT=1<br>lib_deps =<br>    dmatheja/mcu-pin-solver@^0.1.0<br>extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py</pre>**Guide:** Run `pio pkg install` once, then click **Build (`✓`)** or **Upload (`→`)**. *(Remove `build_flags` if your board uses an external CP2102/CH340 UART chip.)* |
+| **ESP32-S3** | `boards/esp32-s3.json` | • **Reserved Flash/PSRAM:** GPIO `26–37` *(GPIO `22–25` nonexistent)*<br>• **Strapping:** GPIO `0, 3, 45, 46`<br>• **USB-Serial:** blocks GPIO `19, 20`<br>• **Wi-Fi active:** blocks `ADC2` (GPIO `11–20`), keeps `ADC1` (GPIO `1–10`)<br>• **Shared Bus:** `i2c`, `spi` | **Config:**<pre>[env:esp32-s3]<br>platform = espressif32<br>board = esp32-s3-devkitc-1<br>framework = arduino<br>monitor_speed = 115200<br>build_flags =<br>    -DARDUINO_USB_MODE=1<br>    -DARDUINO_USB_CDC_ON_BOOT=1<br>lib_deps =<br>    dmatheja/mcu-pin-solver@^0.1.0<br>extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py</pre>**Guide:** Run `pio pkg install` once, then click **Build (`✓`)** or **Upload (`→`)**. *(For UART-bridge USB ports on DevKitC-1, remove `build_flags` or connect to the native USB port.)* |
 
 ---
 
