@@ -14,6 +14,7 @@ TEST_CASES = [
     (SCENARIOS_DIR / "01_valid_sketch.cpp", "esp32-c3", True, "Valid ESP32-C3 sketch (positive test)"),
     (SCENARIOS_DIR / "02_usb_serial_conflict.cpp", "esp32-c3", False, "ESP32-C3: USB-Serial conflict on GPIO 18 & 19"),
     (SCENARIOS_DIR / "03_duplicate_and_invalid_pin.cpp", "esp32-c3", False, "ESP32-C3: Duplicate pin, nonexistent GPIO 32 & no ADC on GPIO 6"),
+    (SCENARIOS_DIR / "04_shared_i2c_bus.cpp", "esp32-c3", False, "ESP32-C3: Shared I2C bus (GPIO 6/7) valid, but STATUS_LED collides on GPIO 6"),
 ]
 
 run_env = os.environ.copy()

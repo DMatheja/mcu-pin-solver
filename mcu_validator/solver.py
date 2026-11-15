@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from z3 import Distinct, Int, Or, Optimize, sat
+from z3 import Int, Or, Optimize, sat
 
 BOARDS_DIR = Path(__file__).resolve().parent.parent / "boards"
 
@@ -16,6 +16,7 @@ def load_board_data(board_id="esp32-c3"):
 def validate_with_z3(requests, active_resources, board_data):
     pins_db = {int(k): v for k, v in board_data["pins"].items()}
     aliases = board_data.get("capability_aliases", {})
+    shared_caps = set(board_data.get("shared_capabilities", []))
     rules = board_data.get("conflict_rules", [])
 
     # 1. Evaluate active conflict rules
@@ -37,9 +38,18 @@ def validate_with_z3(requests, active_resources, board_data):
         if not info:
             conflicts.append(f"{req['name']} (GPIO {p}): Pin does not exist on {board_data['mcu']}.")
             continue
+
+        # Allow shared pins only if all signals on that pin share the same bus capability (e.g. i2c, spi)
         if p in seen_pins:
-            conflicts.append(f"{req['name']} (GPIO {p}): Duplicate assignment with {seen_pins[p]}.")
-        seen_pins[p] = req["name"]
+            incompatible = [
+                prev for prev in seen_pins[p]
+                if not (req["cap"] == prev["cap"] and req["cap"] in shared_caps)
+            ]
+            if incompatible:
+                conflicts.append(
+                    f"{req['name']} (GPIO {p}): Duplicate assignment with {incompatible[0]['name']}."
+                )
+        seen_pins.setdefault(p, []).append(req)
 
         if info.get("reserved"):
             conflicts.append(f"{req['name']} (GPIO {p}): Reserved pin! ({info.get('note', 'Reserved')})")
@@ -85,8 +95,19 @@ def validate_with_z3(requests, active_resources, board_data):
             if pins_db[p].get("strapping"):
                 opt.add_soft(var != p, weight=10)
 
-    if len(z3_vars) > 1:
-        opt.add(Distinct(list(z3_vars.values())))
+    # Couple shared bus lines together and keep all other signal pairs on distinct pins
+    for i, req_a in enumerate(requests):
+        for req_b in requests[i + 1:]:
+            var_a = z3_vars[req_a["name"]]
+            var_b = z3_vars[req_b["name"]]
+            if (
+                req_a["cap"] == req_b["cap"]
+                and req_a["cap"] in shared_caps
+                and req_a["pin"] == req_b["pin"]
+            ):
+                opt.add(var_a == var_b)
+            else:
+                opt.add(var_a != var_b)
 
     suggested = {}
     if opt.check() == sat:

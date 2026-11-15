@@ -33,7 +33,7 @@ def format_report(cpp_path, board_data, active_resources, requests, is_valid, co
 
 def validate_file(cpp_path, board_id="esp32-c3"):
     board_data = load_board_data(board_id)
-    requests, active_res = parse_cpp_file(cpp_path)
+    requests, active_res = parse_cpp_file(cpp_path, board_data)
     is_valid, conflicts, suggested = validate_with_z3(requests, active_res, board_data)
     report = format_report(cpp_path, board_data, active_res, requests, is_valid, conflicts, suggested)
     return is_valid, report

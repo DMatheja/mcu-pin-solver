@@ -27,6 +27,11 @@
   "capability_aliases": {
     "adc": ["adc1", "adc2"]
   },
+  "shared_capabilities": ["i2c", "spi"],
+  "resource_triggers": {
+    "wifi": ["WiFi.begin", "WiFi.softAP"],
+    "usb_serial": ["Serial.begin"]
+  },
   "conflict_rules": [
     {
       "id": "WIFI_BLOCKS_ADC2",
