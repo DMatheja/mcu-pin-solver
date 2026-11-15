@@ -17,6 +17,7 @@
   "frameworks": "*",
   "platforms": "*",
   "build": {
-    "extraScript": "pio_hook.py"
+    "extraScript": "pio_hook.py",
+    "srcFilter": ["-<*>"]
   }
 }
