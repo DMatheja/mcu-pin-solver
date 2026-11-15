@@ -16,6 +16,7 @@ TEST_CASES = [
     (SCENARIOS_DIR / "03_duplicate_and_invalid_pin.cpp", "esp32-c3", False, "ESP32-C3: Duplicate pin, nonexistent GPIO 32 & no ADC on GPIO 6"),
     (SCENARIOS_DIR / "04_shared_i2c_bus.cpp", "esp32-c3", False, "ESP32-C3: Shared I2C bus (GPIO 6/7) valid, but STATUS_LED collides on GPIO 6"),
     (SCENARIOS_DIR / "05_ast_ignores_strings_and_comments.cpp", "esp32-c3", True, "AST parser ignores WiFi.begin inside comments and string literals"),
+    (SCENARIOS_DIR / "06_multi_file_project" / "src", "esp32-c3", False, "Multi-file project: pins in include/pins.h + WiFi in main.cpp + ADC in sensors.cpp"),
 ]
 
 run_env = os.environ.copy()

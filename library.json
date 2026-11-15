@@ -16,6 +16,16 @@
   "license": "MIT",
   "frameworks": "*",
   "platforms": "*",
+  "export": {
+    "include": [
+      "boards/*.json",
+      "mcu_validator/*.py",
+      "pio_hook.py",
+      "library.json",
+      "README.md",
+      "LICENSE"
+    ]
+  },
   "build": {
     "extraScript": "pio_hook.py",
     "srcFilter": ["-<*>"]

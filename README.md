@@ -39,10 +39,24 @@ extra_scripts = pre:.pio/libdeps/$PIOENV/mcu-pin-solver/pio_hook.py
 
 ## Standalone CLI & Tests
 
+Works on single files or whole project directories (automatically aggregates sibling `include/` headers + `src/` files):
+
 ```bash
 pip install z3-solver tree-sitter tree-sitter-cpp
-python -m mcu_validator.cli src/main.cpp esp32-c3
+python -m mcu_validator.cli src esp32-c3
 python tests/run_tests.py
+```
+
+---
+
+## Contributing, AI Handoff & Registry Publishing
+
+- **Developer & AI Agent Guide:** See [AGENTS.md](AGENTS.md) for the full architecture overview, strict AST/Z3 invariants, extension instructions, and verification checklist.
+- **PlatformIO Registry Packaging:** [library.json](library.json) includes an `export` manifest verified via `pio pkg pack`. Maintainers can publish directly with:
+
+```bash
+pio account login
+pio pkg publish
 ```
 
 ---
