@@ -1,0 +1,73 @@
+{
+  "mcu": "ESP32-S3",
+  "description": "Espressif ESP32-S3 (Dual-Core Xtensa LX7, Wi-Fi/BLE)",
+  "pins": {
+    "0":  { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": true,  "reserved": false, "note": "Strapping pin (boot mode)" },
+    "1":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "2":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "3":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": true,  "reserved": false, "note": "Strapping pin (JTAG signal source)" },
+    "4":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "5":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "6":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "7":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "8":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "9":  { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "10": { "capabilities": ["gpio", "adc1", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "11": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "12": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "13": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "14": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "15": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "16": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "17": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "18": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "ADC2 conflicts with Wi-Fi" },
+    "19": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart", "usb"], "strapping": false, "reserved": false, "note": "USB D- & ADC2" },
+    "20": { "capabilities": ["gpio", "adc2", "pwm", "i2c", "spi", "uart", "usb"], "strapping": false, "reserved": false, "note": "USB D+ & ADC2" },
+    "21": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "26": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "27": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "28": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "29": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "30": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "31": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "32": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal SPI flash / PSRAM" },
+    "33": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal Octal-SPI flash / PSRAM" },
+    "34": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal Octal-SPI flash / PSRAM" },
+    "35": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal Octal-SPI flash / PSRAM" },
+    "36": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal Octal-SPI flash / PSRAM" },
+    "37": { "capabilities": [], "strapping": false, "reserved": true, "note": "Internal Octal-SPI flash / PSRAM" },
+    "38": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "39": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart", "jtag"], "strapping": false, "reserved": false, "note": "JTAG (MTCK)" },
+    "40": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart", "jtag"], "strapping": false, "reserved": false, "note": "JTAG (MTDO)" },
+    "41": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart", "jtag"], "strapping": false, "reserved": false, "note": "JTAG (MTDI)" },
+    "42": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart", "jtag"], "strapping": false, "reserved": false, "note": "JTAG (MTMS)" },
+    "43": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "Default UART0 TX" },
+    "44": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false, "note": "Default UART0 RX" },
+    "45": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": true,  "reserved": false, "note": "Strapping pin (VDD_SPI voltage)" },
+    "46": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": true,  "reserved": false, "note": "Strapping pin (ROM log / boot)" },
+    "47": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false },
+    "48": { "capabilities": ["gpio", "pwm", "i2c", "spi", "uart"], "strapping": false, "reserved": false }
+  },
+  "capability_aliases": {
+    "adc": ["adc1", "adc2"]
+  },
+  "shared_capabilities": ["i2c", "spi"],
+  "resource_triggers": {
+    "wifi": ["WiFi.begin", "WiFi.softAP"],
+    "usb_serial": ["Serial.begin"]
+  },
+  "conflict_rules": [
+    {
+      "id": "WIFI_BLOCKS_ADC2",
+      "when_resource_active": "wifi",
+      "forbidden_capability": "adc2",
+      "reason": "ADC2 cannot be used reliably while Wi-Fi is active on ESP32-S3."
+    },
+    {
+      "id": "USB_BLOCKS_GPIO19_20",
+      "when_resource_active": "usb_serial",
+      "forbidden_pins": [19, 20],
+      "reason": "GPIO 19 and 20 are occupied by the internal USB-Serial/JTAG interface on ESP32-S3."
+    }
+  ]
+}

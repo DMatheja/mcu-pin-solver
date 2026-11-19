@@ -4,14 +4,39 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcu-pin-solver"
-version = "0.1.0"
+version = "0.2.0"
 description = "Neuro-Symbolic Z3 Hardware Pin Validator (LLM-Modulo) for Microcontrollers"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["z3-solver>=4.12.0", "tree-sitter>=0.23.0", "tree-sitter-cpp>=0.23.0"]
+dependencies = [
+    "z3-solver>=4.12.0",
+    "tree-sitter>=0.23.0",
+    "tree-sitter-cpp>=0.23.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6.0", "mypy>=1.11.0"]
 
 [project.scripts]
 mcu-validate = "mcu_validator.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["mcu_validator*"]
+
+[tool.setuptools.package-data]
+mcu_validator = ["boards/*.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"pio_hook.py" = ["E402", "F821"]
+"tests/*.py" = ["E402"]
+
+[tool.mypy]
+warn_unused_ignores = true
+ignore_missing_imports = true

@@ -1,49 +1,178 @@
-import sys
-from .parser import parse_cpp_file
-from .solver import load_board_data, validate_with_z3
+"""Command-line interface and LLM-Modulo repair report formatter.
 
-# Formats the validation result and generates the LLM repair prompt
-def format_report(cpp_path, board_data, active_resources, requests, is_valid, conflicts, suggested):
+Entry point for humans (`mcu-validate` / `python -m mcu_validator.cli`), CI tests,
+and PlatformIO (`pio_hook.py`). Ties together `board.py`, `parser.py`, and `solver.py`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+
+from . import __version__
+from .board import BOARDS_DIR, BoardSpec, list_boards, load_board
+from .parser import ParsedProject, parse_cpp
+from .solver import ValidationResult, validate
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """CLI entry point: parse arguments, validate pins, print the report, and exit.
+
+    Exit codes:
+        0 = SAT (all pins valid)
+        1 = UNSAT (hardware conflict detected — stops PlatformIO builds)
+        2 = Input or configuration error (missing path, unknown board, invalid board JSON)
+    """
+    args = _parse_args(argv)
+    boards_dir = Path(args.boards_dir) if args.boards_dir else BOARDS_DIR
+
+    if args.list_boards:
+        boards = list_boards(boards_dir)
+        print("Available boards:", ", ".join(boards) if boards else "none")
+        sys.exit(0)
+
+    try:
+        result, report = validate_path(
+            args.path,
+            args.board,
+            boards_dir=boards_dir,
+            include_dirs=args.include_dir,
+        )
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    print(report)
+    sys.exit(0 if result.is_valid else 1)
+
+
+def validate_path(
+    target: str | Path,
+    board_id: str = "esp32-c3",
+    *,
+    boards_dir: Path = BOARDS_DIR,
+    include_dirs: Sequence[str | Path] = (),
+) -> tuple[ValidationResult, str]:
+    """Run the full 4-stage validation pipeline on a file or project folder."""
+    board = load_board(board_id, boards_dir=boards_dir)
+    project = parse_cpp(target, board, include_dirs=include_dirs)
+    result = validate(project, board)
+    return result, format_report(target, board, project, result)
+
+
+def format_report(
+    target: str | Path,
+    board: BoardSpec,
+    project: ParsedProject,
+    result: ValidationResult,
+) -> str:
+    """Format a validation result as a terminal banner (plus LLM repair prompt on UNSAT)."""
+    modules = ", ".join(project.active_resources) if project.active_resources else "none"
+    pin_summary = _format_pin_summary(project)
     lines = [
         "=" * 65,
-        f" Checked File   : {cpp_path} ({board_data['mcu']})",
-        f" Active Modules : {active_resources}",
+        f" Target         : {target} ({board.mcu})",
+        f" Active Modules : {modules}",
+        f" Checked Pins   : {pin_summary}",
         "=" * 65,
     ]
-    if is_valid:
-        lines.append(" RESULT: SAT (All pins valid! No hardware conflicts detected.)")
-    else:
-        lines.extend([
-            " RESULT: UNSAT (Hardware conflicts detected!)\n",
-            "--- COPY THIS PROMPT BACK TO YOUR AI (LLM-MODULO) ---\n",
-            f"Your C++ code for the {board_data['mcu']} contains the following hardware errors:",
-        ])
-        for conflict in conflicts:
-            lines.append(f"  - {conflict}")
-        lines.append("\nPlease regenerate the code using this exact Z3-verified pin assignment:")
-        for req in requests:
-            name, old_p = req["name"], req["pin"]
-            new_p = suggested.get(name)
-            if old_p == new_p:
-                lines.append(f"  - {name}: Keep GPIO {old_p} (unchanged)")
-            else:
-                lines.append(f"  - {name}: Change GPIO {old_p} -> GPIO {new_p}")
-        lines.append("\n-----------------------------------------------------")
+
+    if result.is_valid:
+        if not project.requests:
+            lines.append(
+                " RESULT: SAT (Warning: 0 pin assignments were detected in the scanned files.)"
+            )
+        else:
+            lines.append(" RESULT: SAT (All pins valid! No hardware conflicts detected.)")
+        return "\n".join(lines)
+
+    lines.extend([
+        " RESULT: UNSAT (Hardware conflicts detected!)\n",
+        "--- COPY THIS PROMPT BACK TO YOUR AI (LLM-MODULO) ---\n",
+        f"Your C++ code for the {board.mcu} contains the following hardware errors:",
+        *(f"  - {conflict}" for conflict in result.conflicts),
+        *_format_repair_section(board, project, result),
+        "\n-----------------------------------------------------",
+    ])
     return "\n".join(lines)
 
-def validate_file(cpp_path, board_id="esp32-c3"):
-    board_data = load_board_data(board_id)
-    requests, active_res = parse_cpp_file(cpp_path, board_data)
-    is_valid, conflicts, suggested = validate_with_z3(requests, active_res, board_data)
-    report = format_report(cpp_path, board_data, active_res, requests, is_valid, conflicts, suggested)
-    return is_valid, report
 
-def main():
-    cpp_file = sys.argv[1] if len(sys.argv) > 1 else "src/main.cpp"
-    board_id = sys.argv[2] if len(sys.argv) > 2 else "esp32-c3"
-    is_valid, report = validate_file(cpp_file, board_id)
-    print(report)
-    sys.exit(0 if is_valid else 1)
+def _format_pin_summary(project: ParsedProject) -> str:
+    """Render a compact pin count and preview (e.g. '3 (LED=8, SOIL=1, RELAY=4)')."""
+    count = len(project.requests)
+    if count == 0:
+        return "0"
+    preview = ", ".join(f"{req.name}={req.pin}" for req in project.requests[:6])
+    if count > 6:
+        preview += f", ... (+{count - 6} more)"
+    return f"{count} ({preview})"
+
+
+def _format_repair_section(
+    board: BoardSpec,
+    project: ParsedProject,
+    result: ValidationResult,
+) -> list[str]:
+    """Build the Z3 repair lines showing which pins to keep and which to change."""
+    if not result.repair_possible:
+        return [
+            f"\nNo valid pin assignment exists on {board.mcu}: "
+            "the requested pins exceed available hardware capabilities."
+        ]
+
+    lines = ["\nPlease regenerate the code using this exact Z3-verified pin assignment:"]
+    for req in project.requests:
+        new_pin = result.suggested_pins[req.name]
+        if req.pin == new_pin:
+            lines.append(f"  - {req.name}: Keep GPIO {req.pin} (unchanged)")
+        else:
+            lines.append(f"  - {req.name}: Change GPIO {req.pin} -> GPIO {new_pin}")
+    return lines
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Parse CLI arguments."""
+    parser = argparse.ArgumentParser(
+        prog="mcu-validate",
+        description="Validate microcontroller pin assignments in C/C++ with Tree-Sitter + Z3.",
+    )
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default="src",
+        help="Path to a C/C++ file or project source directory (default: src).",
+    )
+    parser.add_argument(
+        "board",
+        nargs="?",
+        default="esp32-c3",
+        help="Target board name (matching a JSON in boards/) or direct path to a board .json file.",
+    )
+    parser.add_argument(
+        "--boards-dir",
+        default=None,
+        help="Optional directory containing custom board JSON profiles.",
+    )
+    parser.add_argument(
+        "--include-dir",
+        action="append",
+        default=[],
+        help="Additional header directory to scan alongside the source path (repeatable).",
+    )
+    parser.add_argument(
+        "--list-boards",
+        action="store_true",
+        help="List all available board profiles and exit.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    return parser.parse_args(argv)
+
 
 if __name__ == "__main__":
     main()
