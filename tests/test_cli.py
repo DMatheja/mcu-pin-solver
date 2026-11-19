@@ -95,6 +95,20 @@ class CliTests(unittest.TestCase):
             self.assertIn("Checked Pins   : 0", report)
             self.assertIn("0 pin assignments were detected", report)
 
+    def test_prints_non_blocking_strapping_warning_and_exits_zero(self) -> None:
+        proc = _run_cli("src/main.cpp", "esp32-c3")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertIn("RESULT: SAT (All pins valid, with 1 hardware warning.)", proc.stdout)
+        self.assertIn("Warnings (non-blocking):", proc.stdout)
+        self.assertIn("STATUS_LED (GPIO 8", proc.stdout)
+        self.assertIn("Strapping pin", proc.stdout)
+
+    def test_omits_warnings_section_when_no_strapping_pins_used(self) -> None:
+        proc = _run_cli("tests/scenarios/01_valid_sketch.cpp", "esp32-c3")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertIn("No hardware conflicts detected.", proc.stdout)
+        self.assertNotIn("Warnings (non-blocking):", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

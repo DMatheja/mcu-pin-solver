@@ -152,6 +152,83 @@ class SolverTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate PinRequest name"):
             validate(project, board)
 
+    def test_warns_non_blocking_when_valid_sketch_uses_strapping_pin(self) -> None:
+        code = """
+        #define STATUS_LED 8
+        const int RELAY_PIN = 4;
+        void setup() {
+            pinMode(STATUS_LED, OUTPUT);
+            pinMode(RELAY_PIN, OUTPUT);
+        }
+        """
+        _, _, result = self._check_snippet(code)
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.conflicts, ())
+        self.assertEqual(result.suggested_pins["STATUS_LED"], 8)
+        self.assertEqual(len(result.warnings), 1)
+        self.assertIn("STATUS_LED (GPIO 8", result.warnings[0])
+        self.assertIn("Strapping pin", result.warnings[0])
+
+    def test_no_warnings_when_only_non_strapping_pins_are_used(self) -> None:
+        code = """
+        #define STATUS_LED 3
+        const int RELAY_PIN = 4;
+        void setup() {
+            pinMode(STATUS_LED, OUTPUT);
+            pinMode(RELAY_PIN, OUTPUT);
+        }
+        """
+        _, _, result = self._check_snippet(code)
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.warnings, ())
+
+    def test_strapping_warnings_reflect_final_assignment_after_repair(self) -> None:
+        # Case A: valid strapping pin kept alongside an unrelated conflict.
+        code_kept = """
+        #define STATUS_LED 8
+        const int SOIL_SENSOR = 5;
+        void setup() {
+            WiFi.begin("ssid", "pass");
+            pinMode(STATUS_LED, OUTPUT);
+        }
+        void loop() { analogRead(SOIL_SENSOR); }
+        """
+        _, _, res_kept = self._check_snippet(code_kept)
+        self.assertFalse(res_kept.is_valid)
+        self.assertEqual(res_kept.suggested_pins["STATUS_LED"], 8)
+        self.assertEqual(len(res_kept.warnings), 1)
+        self.assertIn("STATUS_LED (GPIO 8", res_kept.warnings[0])
+
+        # Case B: Z3 is forced onto strapping pin GPIO 2 (last remaining ADC1 pin with Wi-Fi).
+        code_forced = """
+        const int S0 = 0;
+        const int S1 = 1;
+        const int S2 = 3;
+        const int S3 = 4;
+        const int S4 = 5;
+        void setup() { WiFi.begin("ssid", "pass"); }
+        void loop() {
+            analogRead(S0); analogRead(S1); analogRead(S2);
+            analogRead(S3); analogRead(S4);
+        }
+        """
+        _, _, res_forced = self._check_snippet(code_forced)
+        self.assertFalse(res_forced.is_valid)
+        self.assertTrue(res_forced.repair_possible)
+        self.assertEqual(res_forced.suggested_pins["S4"], 2)
+        self.assertEqual(len(res_forced.warnings), 1)
+        self.assertIn("S4 (suggested GPIO 2", res_forced.warnings[0])
+
+        # Case C: invalid strapping pin moved away -> no stale strapping warning.
+        code_moved = """
+        const int BAD_ADC = 8;
+        void loop() { analogRead(BAD_ADC); }
+        """
+        _, _, res_moved = self._check_snippet(code_moved)
+        self.assertFalse(res_moved.is_valid)
+        self.assertNotEqual(res_moved.suggested_pins["BAD_ADC"], 8)
+        self.assertEqual(res_moved.warnings, ())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -84,19 +84,36 @@ def format_report(
             lines.append(
                 " RESULT: SAT (Warning: 0 pin assignments were detected in the scanned files.)"
             )
+        elif result.warnings:
+            count = len(result.warnings)
+            noun = "warning" if count == 1 else "warnings"
+            lines.append(f" RESULT: SAT (All pins valid, with {count} hardware {noun}.)")
+            lines.extend(_format_warning_section(result.warnings))
         else:
             lines.append(" RESULT: SAT (All pins valid! No hardware conflicts detected.)")
         return "\n".join(lines)
 
+    lines.append(" RESULT: UNSAT (Hardware conflicts detected!)")
+    if result.warnings:
+        lines.extend(_format_warning_section(result.warnings))
     lines.extend([
-        " RESULT: UNSAT (Hardware conflicts detected!)\n",
-        "--- COPY THIS PROMPT BACK TO YOUR AI (LLM-MODULO) ---\n",
+        "\n--- COPY THIS PROMPT BACK TO YOUR AI (LLM-MODULO) ---\n",
         f"Your C++ code for the {board.mcu} contains the following hardware errors:",
         *(f"  - {conflict}" for conflict in result.conflicts),
         *_format_repair_section(board, project, result),
         "\n-----------------------------------------------------",
     ])
     return "\n".join(lines)
+
+
+def _format_warning_section(warnings: tuple[str, ...]) -> list[str]:
+    """Build non-blocking hardware advisory lines (e.g. boot/strapping pin notices)."""
+    if not warnings:
+        return []
+    return [
+        "\nWarnings (non-blocking):",
+        *(f"  - {warning}" for warning in warnings),
+    ]
 
 
 def _format_pin_summary(project: ParsedProject) -> str:

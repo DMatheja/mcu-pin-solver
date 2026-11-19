@@ -33,6 +33,7 @@ class ValidationResult:
     conflicts: tuple[str, ...]      # Human-readable conflict messages (empty when SAT)
     suggested_pins: dict[str, int]  # Signal name -> verified GPIO number
     repair_possible: bool = True    # False only when no valid assignment fits on this MCU
+    warnings: tuple[str, ...] = ()  # Non-blocking hardware advisories (e.g. strapping pins)
 
 
 @dataclass(frozen=True)
@@ -60,14 +61,27 @@ def validate(project: ParsedProject, board: BoardSpec) -> ValidationResult:
 
     if not conflicts:
         kept = {req.name: req.pin for req in project.requests}
-        return ValidationResult(is_valid=True, conflicts=(), suggested_pins=kept)
+        warnings = _find_strapping_warnings(project.requests, board, restrictions)
+        return ValidationResult(
+            is_valid=True,
+            conflicts=(),
+            suggested_pins=kept,
+            warnings=tuple(warnings),
+        )
 
     suggested = _solve_reassignment(project.requests, board, restrictions)
+    warnings = _find_strapping_warnings(
+        project.requests,
+        board,
+        restrictions,
+        assigned_pins=suggested,
+    )
     return ValidationResult(
         is_valid=False,
         conflicts=tuple(conflicts),
         suggested_pins=suggested or {},
         repair_possible=suggested is not None,
+        warnings=tuple(warnings),
     )
 
 
@@ -163,6 +177,36 @@ def _check_capabilities(
             reason = forbidden_caps[min(matching)]
             errors.append(f"{label}: {reason}")
     return errors
+
+
+def _find_strapping_warnings(
+    requests: tuple[PinRequest, ...],
+    board: BoardSpec,
+    restrictions: _ActiveRestrictions,
+    assigned_pins: dict[str, int] | None = None,
+) -> list[str]:
+    """Collect non-blocking advisories for signals placed on boot/strapping pins.
+
+    When `assigned_pins` is provided (after Z3 repair), checks the resulting assignment so
+    already-rejected pins are not warned about twice while unavoidable strapping assignments
+    are still surfaced.
+    """
+    warnings: list[str] = []
+    for req in requests:
+        pin_num = assigned_pins[req.name] if assigned_pins is not None else req.pin
+        spec = board.pins.get(pin_num)
+        if spec is None or not spec.strapping:
+            continue
+        if spec.reserved or pin_num in restrictions.forbidden_pins:
+            continue
+
+        reassigned = assigned_pins is not None and pin_num != req.pin
+        label = _pin_label(req, pin_override=pin_num if reassigned else None)
+        detail = _strapping_detail(spec.note)
+        warnings.append(
+            f"{label}: {detail}. External pull-up/down circuitry may affect boot behavior."
+        )
+    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -266,11 +310,25 @@ def _can_share_bus(a: PinRequest, b: PinRequest, shared_caps: frozenset[str]) ->
     )
 
 
-def _pin_label(req: PinRequest) -> str:
+def _pin_label(req: PinRequest, *, pin_override: int | None = None) -> str:
     """Format a signal name with its GPIO number and optional file:line location."""
+    if pin_override is not None:
+        pin_text = f"suggested GPIO {pin_override}"
+    else:
+        pin_text = f"GPIO {req.pin}"
     if req.location:
-        return f"{req.name} (GPIO {req.pin}, {req.location})"
-    return f"{req.name} (GPIO {req.pin})"
+        return f"{req.name} ({pin_text}, {req.location})"
+    return f"{req.name} ({pin_text})"
+
+
+def _strapping_detail(note: str) -> str:
+    """Format a board pin's note so strapping warnings always read clearly."""
+    cleaned = note.strip().rstrip(".")
+    if not cleaned:
+        return "Strapping pin"
+    if "strapping" in cleaned.lower():
+        return cleaned
+    return f"Strapping pin ({cleaned})"
 
 
 def _ensure_unique_request_names(requests: tuple[PinRequest, ...]) -> None:
