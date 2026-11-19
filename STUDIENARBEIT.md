@@ -34,19 +34,19 @@ Modul `[T4_3100 / T4_3200 / T4_3101 – zutreffendes Modul eintragen]` (5./6. Th
 
 ## Kurzfassung
 
-Große Sprachmodelle (*Large Language Models*, LLMs) erzeugen in Sekunden lauffähig wirkenden C++-Code für Mikrocontroller. Bei der Wahl der Anschluss-Pins (GPIOs) unterlaufen ihnen jedoch Fehler, die kein Compiler bemerkt: Pins, an denen intern der Programmspeicher hängt, Analogmessungen auf Wandlern, die durch das WLAN blockiert sind, oder Doppelbelegungen. Der Grund ist, dass Pin-Nummern im Arduino-Ökosystem gewöhnliche Ganzzahlen sind und der Compiler die Hardware nicht kennt.
+Große Sprachmodelle (*Large Language Models*, LLMs) erzeugen in wenigen Sekunden C++-Code für Mikrocontroller, der lauffähig wirkt. Bei der Wahl der Anschluss-Pins (GPIOs) unterlaufen ihnen jedoch Fehler, die kein Compiler bemerkt: Sie verwenden etwa Pins, an denen intern der Programmspeicher hängt, messen Spannungen mit einem Analog-Digital-Wandler, der durch das WLAN blockiert ist, oder belegen einen Pin doppelt. Der Compiler erkennt das nicht, weil Pin-Nummern im Arduino-Ökosystem gewöhnliche Ganzzahlen sind und er die Hardware nicht kennt.
 
-Diese Arbeit entwickelt und evaluiert `mcu-pin-solver`, eine Bibliothek, die solche Fehler vor dem Kompilieren findet. Ein Parser auf Basis von Tree-Sitter liest den Quelltext als Syntaxbaum und extrahiert Pin-Definitionen sowie aktive Peripherie (z. B. WLAN). Diese werden mit einer austauschbaren JSON-Beschreibung des Chips abgeglichen. Bei Konflikten berechnet der Theorembeweiser Z3 als gewichtetes Optimierungsproblem (MaxSMT) eine Ersatzbelegung, die möglichst viele gültige Pins unverändert lässt. Das Ergebnis wird als Reparaturanweisung für das Sprachmodell ausgegeben; in PlatformIO stoppt ein Pre-Build-Hook fehlerhafte Builds.
+Diese Arbeit entwickelt und evaluiert `mcu-pin-solver`, eine Bibliothek, die solche Fehler vor dem Kompilieren findet. Ein Parser auf Basis von Tree-Sitter liest den Quelltext als Syntaxbaum und gewinnt daraus Pin-Definitionen sowie die aktive Peripherie (z. B. WLAN). Diese Angaben werden mit einer austauschbaren JSON-Beschreibung des Chips abgeglichen; neue Mikrocontroller lassen sich so ohne Änderung am Programmcode ergänzen. Liegt ein Konflikt vor, berechnet der Solver Z3 über ein gewichtetes Optimierungsproblem (MaxSMT) eine Ersatzbelegung, die möglichst viele gültige Pins unverändert lässt. Das Ergebnis wird als Reparaturanweisung für das Sprachmodell ausgegeben; in PlatformIO bricht ein Pre-Build-Hook fehlerhafte Builds ab.
 
-Alle neun Regressionsszenarien werden korrekt bewertet, ein Prüflauf dauert im Median unter 0,2 s. Zwölf zusätzliche Grenzfalltests zeigen aber auch systematische Lücken, etwa bei direkt eingesetzten Zahlen, lokalen Zählervariablen, `#ifdef`-Zweigen und SPI-Chip-Select-Leitungen. Eine Evaluation mit echtem LLM-generiertem Code steht noch aus.
+Alle neun Regressionsszenarien werden korrekt bewertet; ein Prüflauf dauert im Median unter 0,2 s. Gezielte Grenzfallexperimente zeigen aber auch systematische Lücken, etwa bei direkt eingesetzten Zahlen, Ganzzahlkonstanten ohne Pin-Bezug, `#ifdef`-Zweigen und SPI-Chip-Select-Leitungen. Eine Evaluation mit tatsächlich von Sprachmodellen erzeugtem Code steht noch aus.
 
 ## Abstract
 
 Large Language Models generate plausible embedded C++ code within seconds, yet they frequently assign microcontroller pins incorrectly – e.g. pins wired to internal flash memory, analog inputs blocked by an active Wi-Fi radio, or duplicate assignments. Compilers cannot detect these faults because pin numbers are plain integers.
 
-This thesis presents and evaluates `mcu-pin-solver`, a pre-build checker for PlatformIO. A Tree-Sitter-based parser extracts pin definitions and active peripherals from the source code's syntax tree and checks them against a declarative JSON description of the target chip. If conflicts occur, the Z3 theorem prover solves a weighted MaxSMT problem to compute a repair that keeps as many valid pins as possible; the result is emitted as a repair prompt for the LLM, and a pre-build hook stops the faulty build.
+This thesis presents and evaluates `mcu-pin-solver`, a pre-build checker for PlatformIO. A Tree-Sitter-based parser extracts pin definitions and active peripherals from the source code's syntax tree and checks them against a declarative JSON description of the target chip, so that new microcontrollers can be added without changing any program code. If conflicts occur, the Z3 solver computes a repair via weighted MaxSMT that keeps as many valid pins as possible; the result is emitted as a repair prompt for the LLM, and a pre-build hook stops the faulty build.
 
-All nine regression scenarios are classified correctly, with a median check time below 0.2 s. Twelve additional edge-case experiments, however, reveal systematic gaps (literal pin numbers, local counter variables, `#ifdef` branches, SPI chip-select lines). An evaluation on real LLM-generated code remains future work.
+All nine regression scenarios are classified correctly, with a median check time below 0.2 s. Targeted edge-case experiments, however, reveal systematic gaps (literal pin numbers, integer constants unrelated to pins, `#ifdef` branches, SPI chip-select lines). An evaluation on real LLM-generated code remains future work.
 
 ---
 
@@ -68,7 +68,7 @@ All nine regression scenarios are classified correctly, with a median check time
 - [2 Grundlagen](#2-grundlagen)
   - [2.1 Große Sprachmodelle](#21-große-sprachmodelle)
   - [2.2 Neuro-symbolische KI und das LLM-Modulo-Prinzip](#22-neuro-symbolische-ki-und-das-llm-modulo-prinzip)
-  - [2.3 Quelltextanalyse vom Text zum Syntaxbaum](#23-quelltextanalyse-vom-text-zum-syntaxbaum)
+  - [2.3 Quelltextanalyse: vom Text zum Syntaxbaum](#23-quelltextanalyse-vom-text-zum-syntaxbaum)
   - [2.4 Tree-Sitter](#24-tree-sitter)
   - [2.5 SAT, SMT und der Solver Z3](#25-sat-smt-und-der-solver-z3)
   - [2.6 Optimierung mit MaxSMT](#26-optimierung-mit-maxsmt)
@@ -132,7 +132,7 @@ All nine regression scenarios are classified correctly, with a median check time
 | PSRAM | *Pseudo-Static RAM*, zusätzlicher Arbeitsspeicher |
 | PWM | *Pulse-Width Modulation*, Pulsweitenmodulation |
 | SAT | *Satisfiability*, Erfüllbarkeit; auch Ergebnis „erfüllbar“ |
-| SMT | *Satisfiability Modulo Theories*, Erfüllbarkeit über mathematischen Theorien |
+| SMT | *Satisfiability Modulo Theories*, Erfüllbarkeit modulo Theorien |
 | SPI | *Serial Peripheral Interface*, schneller serieller Bus |
 | UART | *Universal Asynchronous Receiver Transmitter*, serielle Schnittstelle |
 | UNSAT | *Unsatisfiable*, Ergebnis „nicht erfüllbar“ |
@@ -143,9 +143,10 @@ All nine regression scenarios are classified correctly, with a median check time
 | Symbol | Bedeutung |
 | :--- | :--- |
 | $\mathcal{P}$ | Menge aller im Hardware-Profil eingetragenen GPIO-Nummern eines Chips |
-| $r_i$ | $i$-te aus dem Quelltext extrahierte Pin-Anforderung, $i = 1, \dots, n$ |
+| $r_i$ | $i$-te aus dem Quelltext extrahierte Pin-Anforderung (kurz: Signal), $i = 1, \dots, n$ |
 | $p_i^0$ | im Quelltext notierte (ursprüngliche) Pin-Nummer von $r_i$ |
 | $c_i$ | von $r_i$ benötigte Fähigkeit, z. B. `gpio`, `adc`, `i2c` |
+| $A(c_i)$ | über `capability_aliases` aufgelöste Menge konkreter Fähigkeiten, z. B. $A(\texttt{adc}) = \{\texttt{adc1}, \texttt{adc2}\}$ |
 | $v_i$ | ganzzahlige Entscheidungsvariable in Z3: neuer Pin für $r_i$ |
 | $P_i$ | Menge der für $r_i$ zulässigen Pins (Kandidatenmenge) |
 | $S$ | Menge der Strapping-Pins des Chips |
@@ -206,7 +207,7 @@ All nine regression scenarios are classified correctly, with a median check time
 
 # Hauptteil
 
-*Hinweis: Der Seitenumfang von 40 bis 70 Seiten nach Abschnitt 3.4.3 der DHBW-Richtlinie bezieht sich auf die Kapitel 1 bis 9. Vorspann, Verzeichnisse und Anhänge zählen nicht dazu. Vollständige Quelltexte stehen deshalb im Anhang; der Hauptteil zeigt nur die für das Verständnis nötigen Auszüge.*
+*Hinweis für den Verfasser: Der Seitenumfang von 40 bis 70 Seiten nach Abschnitt 3.4.3 der DHBW-Richtlinie bezieht sich auf die Kapitel 1 bis 9. Vorspann, Verzeichnisse und Anhänge zählen nicht dazu. Vollständige Quelltexte stehen deshalb im Anhang; der Hauptteil zeigt nur die für das Verständnis nötigen Auszüge. Diesen Hinweis vor der Abgabe entfernen.*
 
 ## 1 Einleitung
 
@@ -229,13 +230,15 @@ Weil ein Chip nicht für jede interne Funktion einen eigenen Anschluss hat, werd
   ------------------                 -------               ----------------------
   Digitale Ein-/Ausgänge  ───┐                        ┌──► GPIO 0–4   (auch ADC1)
   Analog-Wandler ADC1/ADC2 ──┼──►  Pin-Multiplexing  ─┼──► GPIO 5     (ADC2)
-  I2C-/SPI-Controller     ───┘                        └──► GPIO 6, 7  (I2C, SPI)
+  I2C-/SPI-Controller     ───┘                        └──► GPIO 6, 7  (z. B. I2C, SPI)
   Interner SPI-Flash  ────────────── fest verdrahtet ────► GPIO 12–17  (nicht nutzbar)
   USB-Schnittstelle   ────────────── fest verdrahtet ────► GPIO 18, 19 (bei USB belegt)
 ```
 *Abbildung 1.1: Pin-Multiplexing als „Rangierbahnhof“ (ESP32-C3, vereinfacht; Pin-Angaben nach [[7]](#ref-7)).*
 
-Mit großen Sprachmodellen (LLMs) lässt sich Firmware heute in natürlicher Sprache beschreiben, etwa: „Schreibe eine ESP32-C3-Firmware mit Status-LED, Bodenfeuchtesensor, Relais, WLAN und serieller Ausgabe über USB.“ Das Modell liefert in Sekunden strukturierten C++-Code. Studien zeigen, dass LLMs dabei für typische Embedded-Aufgaben bemerkenswert oft funktionierenden Code erzeugen, aber eben nicht zuverlässig [[6]](#ref-6). Für die Pin-Belegung ist das besonders heikel: Ein falscher Pin fällt beim Kompilieren nicht auf, sondern erst auf der echten Platine – im schlechtesten Fall als Absturz beim Start.
+Mit großen Sprachmodellen (LLMs) lässt sich Firmware heute in natürlicher Sprache beschreiben, etwa: „Schreibe eine ESP32-C3-Firmware mit Status-LED, Bodenfeuchtesensor, Relais, WLAN und serieller Ausgabe über USB.“ Das Modell liefert in Sekunden strukturierten C++-Code. Untersuchungen zeigen, dass LLMs für typische Embedded-Aufgaben häufig funktionierenden Code erzeugen, aber nicht zuverlässig [[6]](#ref-6). Für die Pin-Belegung ist das besonders heikel: Ein falsch gewählter Pin fällt beim Kompilieren nicht auf, sondern erst auf der realen Hardware. Im ungünstigen Fall startet der Chip nicht mehr; ebenso möglich ist, dass ein Sensor stillschweigend unbrauchbare Werte liefert, nachdem die Schaltung bereits aufgebaut ist. Die Fehlersuche ist dann aufwendig, weil das Symptom keinen direkten Hinweis auf den verursachenden Pin gibt.
+
+An dieser Stelle setzt die vorliegende Arbeit an. Ziel ist eine automatische Prüfinstanz, die fehlerhafte Pin-Belegungen *vor* dem Kompilieren erkennt, den Build in diesem Fall anhält und zugleich eine gültige Alternative vorschlägt. Wie weit dieser Anspruch tatsächlich eingelöst wird, untersuchen die Kapitel 7 und 8.
 
 ### 1.2 Problemstellung
 
@@ -266,22 +269,22 @@ void loop() {
 Dass der Compiler diese Fehler nicht findet, hat drei Gründe:
 
 1. **Pins sind nur Zahlen.** Funktionen wie `pinMode(uint8_t pin, uint8_t mode)` akzeptieren jede Zahl von 0 bis 255. Für den Compiler ist `pinMode(12, OUTPUT)` genauso gültig wie `pinMode(4, OUTPUT)`.
-2. **Der Compiler kennt den Chip nicht.** Er kennt den Befehlssatz des Prozessors, aber nicht, welche Pins intern belegt sind oder gar nicht existieren.
+2. **Der Compiler kennt die Pin-Belegung des Chips nicht.** Er kennt den Befehlssatz des Prozessors, aber nicht, welche Pins intern belegt sind oder gar nicht existieren.
 3. **Konflikte entstehen erst durch Kombination.** `analogRead(5)` ist für sich genommen zulässig. Unzulässig wird es erst, weil an anderer Stelle – vielleicht in einer anderen Datei – `WiFi.begin(...)` aufgerufen wird. Der Compiler übersetzt jede Datei einzeln und prüft solche Wechselwirkungen nicht.
 
 Gesucht ist also ein Werkzeug, das Hardware-Wissen besitzt, das gesamte Projekt betrachtet und vor dem Kompilieren eingreift.
 
 ### 1.3 Fünf Fehlerklassen und ihre elektronischen Ursachen
 
-In den technischen Handbüchern der ESP32-Chips [[7]](#ref-7), [[8]](#ref-8) wird zwischen zwei Arten der Pin-Verschaltung unterschieden. Die **GPIO-Matrix** ist ein flexibles digitales Koppelfeld: Digitale Signale wie I2C, SPI, UART oder PWM lassen sich auf fast jeden freien Pin legen. Analoge Signale (ADC), der interne Speicher und USB sind dagegen über den **IO_MUX** bzw. direkte Leitungen **fest mit bestimmten Pins verbunden**. Diese Unterscheidung erklärt, warum manche Pins frei austauschbar sind und andere nicht.
+Die technischen Handbücher der ESP32-Chips [[7]](#ref-7), [[8]](#ref-8) unterscheiden zwei Arten der Pin-Verschaltung. Die **GPIO-Matrix** ist ein flexibles digitales Koppelfeld: Digitale Signale wie I2C, SPI, UART oder PWM lassen sich auf nahezu jeden freien Pin legen. Analoge Signale (ADC), der interne Speicher und USB sind dagegen über den **IO_MUX** bzw. direkte Leitungen **fest mit bestimmten Pins verbunden**. Diese Unterscheidung erklärt, warum manche Pins frei austauschbar sind und andere nicht.
 
 Für diese Arbeit werden fünf Fehlerklassen unterschieden. Die Einteilung stammt vom Verfasser; sie deckt die Fehler ab, gegen die das Werkzeug prüft, erhebt aber keinen Anspruch auf Vollständigkeit.
 
-1. **Reservierte und nicht vorhandene Pins.** Beim ESP32-C3 sind GPIO 12–17 mit dem internen SPI-Flash verbunden [[7]](#ref-7), beim ESP32-S3 GPIO 26–37 mit Flash bzw. PSRAM [[8]](#ref-8). Wer dort schreibt, stört das Laden von Programmbefehlen. Hinzu kommen Nummern, die es auf dem Chip gar nicht gibt – etwa GPIO 32, das von älteren ESP32-Boards bekannt ist, beim ESP32-C3 aber nicht existiert. Solche Nummern werden hier **Geister-Pins** genannt.
-2. **Konflikte durch aktive Peripherie.** Der WLAN-Treiber benutzt den Wandler `ADC2` selbst; Anwendungen können `ADC2` deshalb nur nutzen, solange WLAN nicht läuft [[9]](#ref-9). Betroffen sind beim ESP32-C3 GPIO 5, beim ESP32-S3 GPIO 11–20. Entsprechend belegt die native USB-Schnittstelle die Pins GPIO 18/19 (C3) bzw. 19/20 (S3).
-3. **Fehlende Fähigkeit.** Nicht jeder Pin kann alles. GPIO 6 des ESP32-C3 beherrscht etwa I2C und SPI, hat aber keine Verbindung zum Analog-Wandler. `analogRead(6)` liefert dort keine sinnvollen Werte.
+1. **Reservierte und nicht vorhandene Pins.** Beim ESP32-C3 sind GPIO 12–17 mit dem internen SPI-Flash verbunden [[7]](#ref-7), beim ESP32-S3 GPIO 26–37 mit Flash bzw. PSRAM [[8]](#ref-8). Wer diese Pins umkonfiguriert, stört das Laden von Programmbefehlen. Hinzu kommen Nummern, die es auf dem Chip gar nicht gibt – etwa GPIO 32, das von älteren ESP32-Boards bekannt ist, beim ESP32-C3 aber nicht existiert. Solche Nummern werden hier **Geister-Pins** genannt.
+2. **Konflikte durch aktive Peripherie.** Bei aktivem WLAN können Anwendungen den Wandler `ADC2` nicht zuverlässig nutzen [[9]](#ref-9). Betroffen sind beim ESP32-C3 GPIO 5, beim ESP32-S3 GPIO 11–20. Entsprechend belegt die native USB-Schnittstelle die Pins GPIO 18/19 (C3) bzw. 19/20 (S3).
+3. **Fehlende Fähigkeit.** Nicht jeder Pin kann alles. GPIO 6 des ESP32-C3 ist beispielsweise nicht mit dem Analog-Wandler verbunden; `analogRead(6)` liefert dort keine sinnvollen Werte.
 4. **Doppelbelegung – und die erlaubte Ausnahme.** Zwei unabhängige Verbraucher auf demselben Pin stören sich gegenseitig. Bei Bussen wie I2C ist das Teilen dagegen ausdrücklich vorgesehen: Mehrere Sensoren hängen an denselben Leitungen SDA und SCL. Ein Prüfwerkzeug muss beide Fälle unterscheiden.
-5. **Strapping-Pins.** Beim Einschalten liest der Chip einige Pins aus, um zu entscheiden, wie er startet (ESP32-C3: GPIO 2, 8, 9; ESP32-S3: GPIO 0, 3, 45, 46) [[7]](#ref-7), [[8]](#ref-8). Diese Pins dürfen danach benutzt werden, eine äußere Beschaltung kann aber den Start verhindern. Bei automatischen Korrekturen sollten sie daher eher gemieden werden.
+5. **Strapping-Pins.** Beim Einschalten liest der Chip einige Pins aus, um zu entscheiden, wie er startet (ESP32-C3: GPIO 2, 8, 9; ESP32-S3: GPIO 0, 3, 45, 46) [[7]](#ref-7), [[8]](#ref-8). Diese Pins dürfen danach benutzt werden, eine äußere Beschaltung kann aber den Start verhindern. Bei automatischen Korrekturen sollten sie daher eher gemieden werden. Anders als die Klassen 1 bis 4 ist Klasse 5 kein harter Fehler, sondern ein Risiko.
 
 | Fehlerklasse | Beispiel (ESP32-C3) | Folge auf der Hardware |
 | :--- | :--- | :--- |
@@ -295,7 +298,7 @@ Für diese Arbeit werden fünf Fehlerklassen unterschieden. Die Einteilung stamm
 
 ### 1.4 Zielsetzung und Forschungsfragen
 
-Ziel der Arbeit ist ein Werkzeug, das die fünf Fehlerklassen in PlatformIO-Projekten vor dem Kompilieren erkennt, verständlich meldet und eine korrigierte Pin-Belegung vorschlägt, die das Sprachmodell übernehmen kann.
+Ziel der Arbeit ist ein Werkzeug, das die fünf Fehlerklassen in PlatformIO-Projekten vor dem Kompilieren erkennt, verständlich meldet und eine korrigierte Pin-Belegung vorschlägt, die das Sprachmodell übernehmen kann. Das Hardware-Wissen soll dabei so vom Programmcode getrennt sein, dass sich weitere Mikrocontroller allein durch eine Beschreibungsdatei ergänzen lassen.
 
 Daraus ergeben sich drei Forschungsfragen:
 
@@ -303,11 +306,11 @@ Daraus ergeben sich drei Forschungsfragen:
 - **FF2 – Prüfung und Reparatur:** Wie lässt sich chipspezifisches Wissen vom Prüfcode trennen und so in ein Optimierungsproblem übersetzen, dass im Konfliktfall eine Ersatzbelegung entsteht, die möglichst wenig ändert, geteilte Busse erhält und Strapping-Pins meidet?
 - **FF3 – Integration:** Wie lässt sich die Prüfung so in PlatformIO einbinden, dass fehlerhafte Builds gestoppt werden und eine für Sprachmodelle direkt verwertbare Korrekturanweisung entsteht?
 
-**Zum Begriff „Verifikation“.** Im Titel ist von Verifikation die Rede. Gemeint ist damit eine formale Prüfung des *aus dem Quelltext extrahierten Pin-Modells* gegen ein *Modell der Hardware*. Es wird also nicht bewiesen, dass das gesamte Programm korrekt ist. Ob die Prüfung tatsächlich alle Fehler findet, hängt davon ab, wie vollständig der Parser den Quelltext erfasst und wie genau das Hardware-Profil den Chip beschreibt. Beide Einschränkungen werden in Kapitel 7 und 8 untersucht.
+**Zum Begriff „Verifikation“.** Im Titel ist von Verifikation die Rede. Gemeint ist eine formale Prüfung des *aus dem Quelltext extrahierten Pin-Modells* gegen ein *Modell der Hardware*. Es wird also nicht bewiesen, dass das gesamte Programm korrekt ist. Ob die Prüfung tatsächlich alle Fehler findet, hängt davon ab, wie vollständig der Parser den Quelltext erfasst und wie genau das Hardware-Profil den Chip beschreibt. Beide Einschränkungen werden in den Kapiteln 7 und 8 untersucht.
 
 ### 1.5 Vorgehen und Aufbau der Arbeit
 
-Die Software entstand iterativ: Ein erster Prototyp für eine Einzeldatei und den ESP32-C3 wurde schrittweise um mehrere Dateien, ein zweites Chip-Profil, geteilte Busse und die PlatformIO-Integration erweitert. Jede Erweiterung wurde durch ein Testszenario abgesichert. Die Software wurde dabei mit Unterstützung von KI-Assistenten entwickelt; Abschnitt 8.3 und das Verzeichnis der KI-Hilfsmittel legen dies offen.
+Die Software entstand iterativ: Ein erster Prototyp für eine Einzeldatei und den ESP32-C3 wurde schrittweise um mehrere Dateien, ein zweites Chip-Profil, geteilte Busse und die PlatformIO-Integration erweitert. Jede Erweiterung wurde durch ein Testszenario abgesichert. Die Software wurde mit Unterstützung von KI-Assistenten entwickelt; Abschnitt 8.3 und das Verzeichnis der KI-Hilfsmittel legen dies offen.
 
 Die Arbeit ist wie folgt aufgebaut: Kapitel 2 erklärt die Grundlagen ohne Vorkenntnisse – Sprachmodelle, Syntaxbäume und den Solver Z3. Kapitel 3 ordnet die Arbeit in verwandte Ansätze ein. Kapitel 4 formuliert die Anforderungen, Kapitel 5 begründet die Entwurfsentscheidungen und führt ein durchgängiges Beispiel vor. Kapitel 6 beschreibt die Implementierung. Kapitel 7 evaluiert das System mit Regressionstests, eigenen Grenzfallexperimenten und Laufzeitmessungen. Kapitel 8 diskutiert Ergebnisse und Grenzen, Kapitel 9 beantwortet die Forschungsfragen.
 
@@ -315,31 +318,31 @@ Die Arbeit ist wie folgt aufgebaut: Kapitel 2 erklärt die Grundlagen ohne Vorke
 
 ## 2 Grundlagen
 
-Dieses Kapitel erklärt die drei Bausteine, auf denen das Werkzeug beruht: Sprachmodelle (2.1–2.2), die Analyse von Quelltext mit Syntaxbäumen (2.3–2.4) und die logische Prüfung und Optimierung mit Z3 (2.5–2.6). Abschnitt 2.7 beschreibt PlatformIO.
+Dieses Kapitel erklärt die drei Bausteine, auf denen das Werkzeug beruht: Sprachmodelle (2.1–2.2), die Analyse von Quelltext mit Syntaxbäumen (2.3–2.4) sowie die logische Prüfung und Optimierung mit Z3 (2.5–2.6). Abschnitt 2.7 beschreibt die Entwicklungsumgebung PlatformIO.
 
 ### 2.1 Große Sprachmodelle
 
-Ein großes Sprachmodell ist ein neuronales Netz – heute meist ein *Transformer* [[17]](#ref-17) –, das mit sehr großen Textmengen trainiert wurde. Es erzeugt Text Stück für Stück: Aus allen bisherigen Textbausteinen (*Tokens*) $t_1, \dots, t_{k-1}$ schätzt es die Wahrscheinlichkeit für den nächsten Baustein,
+Ein großes Sprachmodell ist ein neuronales Netz – heute meist ein *Transformer* [[20]](#ref-20) –, das mit sehr großen Textmengen trainiert wurde. Es erzeugt Text Stück für Stück: Aus allen bisherigen Textbausteinen (*Tokens*) $t_1, \dots, t_{k-1}$ schätzt es die Wahrscheinlichkeit für den nächsten Baustein,
 
 $$P(t_k \mid t_1, \dots, t_{k-1}),$$
 
-und wählt einen passenden aus. Man spricht von *Next-Token-Prediction*.
+und wählt daraus einen Baustein aus. Man spricht von *Next-Token-Prediction*.
 
 > **Kurz erklärt:** Ein Sprachmodell „rechnet“ nicht nach, ob ein Pin frei ist. Es schreibt das, was in ähnlichen Texten statistisch häufig folgt.
 
-Daraus folgen für die Pin-Belegung drei Schwächen:
+Daraus lassen sich für die Pin-Belegung drei Schwächen ableiten:
 
-1. **Verzerrung durch Trainingsdaten.** Im Internet gibt es sehr viele Beispiele für den älteren ESP32, auf dem GPIO 12 oder GPIO 32 übliche Pins sind. Solche Muster sind statistisch „naheliegend“, auch wenn ein ESP32-C3 gefordert ist.
-2. **Keine globale Prüfung.** Das Modell schreibt von oben nach unten. Wenn es in Zeile 10 `WiFi.begin(...)` schreibt, prüft nichts nach, ob `SOIL_SENSOR = 5` aus Zeile 5 dadurch ungültig geworden ist.
-3. **Unzuverlässige Selbstkorrektur.** Bittet man ein Modell, die eigene Antwort zu prüfen, verbessert sich das Ergebnis ohne externes Feedback nicht zuverlässig; teilweise wird es sogar schlechter [[13]](#ref-13).
+1. **Verzerrung durch Trainingsdaten.** Im Internet gibt es sehr viele Beispiele für den älteren ESP32, auf dem GPIO 12 oder GPIO 32 übliche Pins sind. Es ist plausibel, dass solche Muster auch dann vorgeschlagen werden, wenn ein ESP32-C3 gefordert ist. Diese Erklärung ist eine Hypothese; sie wurde in dieser Arbeit nicht empirisch überprüft.
+2. **Keine globale Prüfung.** Das Modell schreibt von vorn nach hinten. Wenn es in Zeile 10 `WiFi.begin(...)` erzeugt, gibt es keinen eingebauten Mechanismus, der prüft, ob `SOIL_SENSOR = 5` aus Zeile 5 dadurch ungültig geworden ist.
+3. **Unzuverlässige Selbstkorrektur.** Bittet man ein Modell, die eigene Antwort ohne externe Rückmeldung zu prüfen, verbessert sich das Ergebnis nicht zuverlässig; teilweise wird es sogar schlechter [[13]](#ref-13).
 
 ### 2.2 Neuro-symbolische KI und das LLM-Modulo-Prinzip
 
-Garcez und Lamb beschreiben die Entwicklung der KI in drei Wellen [[11]](#ref-11): Die erste Welle war **symbolisch** – Regeln und Logik, die exakt und nachprüfbar sind, aber keine unscharfen Aufgaben lösen. Die zweite Welle ist **neuronal** – lernende Netze wie Sprachmodelle, die flexibel und kreativ sind, aber keine Garantien geben. Die dritte Welle, die **neuro-symbolische KI**, verbindet beide.
+Garcez und Lamb beschreiben die Entwicklung der KI in drei Wellen [[11]](#ref-11): Die erste Welle war **symbolisch** – Regeln und Logik, die exakt und nachprüfbar sind, sich aber schwer auf unscharfe Aufgaben übertragen lassen. Die zweite Welle ist **neuronal** – lernende Netze wie Sprachmodelle, die flexibel sind, aber keine Korrektheitsgarantien geben. Die dritte Welle, die **neuro-symbolische KI**, verbindet beide Ansätze.
 
-Kambhampati et al. übertragen diesen Gedanken mit dem **LLM-Modulo-Framework** auf Planungsaufgaben [[14]](#ref-14): Das Sprachmodell erzeugt Kandidatenlösungen, externe Prüfer (*Critics*) bewerten sie und geben Rückmeldung, bis ein Kandidat alle Prüfungen besteht. Harte Prüfer stehen für unverhandelbare Bedingungen, weiche Prüfer für Qualitätswünsche.
+Kambhampati et al. übertragen diesen Gedanken mit dem **LLM-Modulo-Framework** auf Planungsaufgaben [[15]](#ref-15): Das Sprachmodell erzeugt Kandidatenlösungen, externe Prüfer (*Critics*) bewerten sie und geben Rückmeldung, bis ein Kandidat alle Prüfungen besteht. Harte Prüfer stehen für unverhandelbare Bedingungen, weiche Prüfer für Qualitätswünsche.
 
-Bildlich ist das Sprachmodell der Architekt, der schnell Entwürfe zeichnet, und der Prüfer der Statiker, der nachrechnet. Findet der Statiker einen Fehler, schickt er dem Architekten eine präzise Korrektur – er reißt nicht den ganzen Entwurf ab. Abbildung 2.1 zeigt, wie `mcu-pin-solver` diesen Kreislauf umsetzt.
+Bildlich ist das Sprachmodell der Architekt, der schnell Entwürfe zeichnet, und der Prüfer der Statiker, der nachrechnet. Findet der Statiker einen Fehler, schickt er dem Architekten eine präzise Korrektur, statt den ganzen Entwurf zu verwerfen. Abbildung 2.1 zeigt, wie `mcu-pin-solver` diesen Kreislauf umsetzt.
 
 ```text
   ┌────────────────────────────────────────────────────────────┐
@@ -360,22 +363,22 @@ Bildlich ist das Sprachmodell der Architekt, der schnell Entwürfe zeichnet, und
   └───────────────┬───────────────┘
                   └──────► zurück zu 1 (LLM korrigiert Pins)
 ```
-*Abbildung 2.1: Der LLM-Modulo-Kreislauf in `mcu-pin-solver` (nach dem Prinzip aus [[14]](#ref-14)).*
+*Abbildung 2.1: Der LLM-Modulo-Kreislauf in `mcu-pin-solver` (nach dem Prinzip aus [[15]](#ref-15)).*
 
-Wichtig für die Einordnung: Das Werkzeug selbst enthält kein neuronales Netz. Es ist der symbolische Prüfer im Kreislauf; der Schritt zurück zum Sprachmodell erfolgt in Version 0.1.0 manuell, indem der Prompt kopiert wird.
+Wichtig für die Einordnung: Das Werkzeug selbst enthält kein neuronales Netz. Es ist der symbolische Prüfer im Kreislauf; „neuro-symbolisch“ ist also das *Gesamtsystem* aus Sprachmodell und Prüfer. Der Schritt zurück zum Sprachmodell erfolgt in Version 0.1.0 manuell, indem der ausgegebene Prompt kopiert wird.
 
-### 2.3 Quelltextanalyse vom Text zum Syntaxbaum
+### 2.3 Quelltextanalyse: vom Text zum Syntaxbaum
 
-Um Pins zu prüfen, muss das Werkzeug zuerst herausfinden, welche Pins im Quelltext stehen. Naheliegend wäre eine Textsuche mit **regulären Ausdrücken** (*Regex*), etwa nach dem Muster `#define NAME ZAHL`. Das scheitert aus einem grundsätzlichen Grund: Reguläre Ausdrücke beschreiben in der Chomsky-Hierarchie nur die einfachsten Sprachen (Typ 3) [[12]](#ref-12). Sie können sich nicht „merken“, ob sie sich gerade in einem Kommentar, einer Zeichenkette oder einer verschachtelten Klammer befinden. Programmiersprachen wie C++ sind deutlich komplexer. Eine Textsuche fällt deshalb auf folgende Fälle herein:
+Um Pins zu prüfen, muss das Werkzeug zuerst herausfinden, welche Pins im Quelltext stehen. Naheliegend wäre eine Textsuche mit **regulären Ausdrücken** (*Regex*), etwa nach dem Muster `#define NAME ZAHL`. Das stößt auf ein grundsätzliches Problem: Reguläre Ausdrücke beschreiben in der Chomsky-Hierarchie nur die einfachste Sprachklasse (Typ 3, reguläre Sprachen) [[12]](#ref-12). Sie können beliebig tief verschachtelte Klammern nicht korrekt erkennen und haben keinen Begriff davon, ob eine Fundstelle in einem Kommentar, einer Zeichenkette oder echtem Programmcode liegt. Die Syntax von C++ ist deutlich komplexer. Eine reine Textsuche fällt deshalb auf folgende Fälle herein:
 
 1. Kommentare: `// WiFi.begin("Test");` würde fälschlich als WLAN-Start erkannt.
 2. Zeichenketten: `Serial.println("Bitte nicht WiFi.begin() aufrufen");` ebenso.
 3. Schleifenvariablen: `for (int i = 0; ...)` sieht ähnlich aus wie `const int SENSOR = 0;`.
 4. Formatierung: Leerzeichen wie in `WiFi . begin()` sind in C++ erlaubt.
 
-Ein **Parser** geht stattdessen wie ein Compiler vor [[1]](#ref-1): Zuerst zerlegt die *lexikalische Analyse* den Text in Bausteine (*Tokens*) wie `const`, `int`, `LED`, `=`, `12`, `;`. Dann ordnet die *syntaktische Analyse* diese Bausteine nach den Regeln der Sprache zu einem Baum.
+Ein **Parser** geht stattdessen wie das Frontend eines Compilers vor [[1]](#ref-1): Zuerst zerlegt die *lexikalische Analyse* den Text in Bausteine (*Tokens*) wie `const`, `int`, `LED`, `=`, `12`, `;`. Dann ordnet die *syntaktische Analyse* diese Bausteine nach den Regeln der Sprache zu einem Baum.
 
-Man unterscheidet zwei Baumformen (Abbildung 2.2): Der **konkrete Syntaxbaum** (CST) enthält jedes Zeichen, auch `=` und `;`. Der **abstrakte Syntaxbaum** (AST) lässt reine Satzzeichen weg und zeigt nur die Bedeutung: Typ, Name, Wert.
+Man unterscheidet zwei Baumformen (Abbildung 2.2): Der **konkrete Syntaxbaum** (CST) enthält jedes Zeichen, auch `=` und `;`. Der **abstrakte Syntaxbaum** (AST) lässt reine Satzzeichen weg und zeigt nur die inhaltliche Struktur: Typ, Name, Wert.
 
 ```text
 Quelltext:  const int LED = 12;
@@ -401,6 +404,8 @@ declaration                               declaration
 1. **Fehlertoleranz.** Tree-Sitter erzeugt auch dann einen Baum, wenn Code unvollständig ist oder Header wie `Arduino.h` fehlen. Fehlerhafte Stellen werden als Fehlerknoten markiert, der Rest bleibt nutzbar.
 2. **Kein Compiler nötig.** Es reicht ein Python-Paket; die Werkzeugkette des Zielchips muss nicht installiert sein.
 3. **Benannte Felder.** Tree-Sitter liefert technisch einen konkreten Baum, bietet aber benannte Felder wie `name`, `value` oder `function` an. Über diese Felder arbeitet man praktisch mit einer abstrakten Sicht.
+
+Eine wichtige Einschränkung gehört ebenfalls dazu: Tree-Sitter führt **keinen Präprozessor** aus und löst **keine Typen** auf. Makros werden nicht expandiert, und alle Zweige einer `#ifdef`-Weiche erscheinen gleichzeitig im Baum. Die Folgen dieser Eigenschaft zeigt Kapitel 7.
 
 Abbildung 2.3 zeigt einen Ausschnitt des Baums, den `tree-sitter-cpp` in der verwendeten Version 0.23.4 für ein kurzes Beispiel erzeugt. Feldnamen stehen vor dem Doppelpunkt.
 
@@ -452,23 +457,23 @@ Drei Beobachtungen sind für die Implementierung wichtig:
 
 Nachdem die Pins bekannt sind, müssen sie geprüft und gegebenenfalls neu verteilt werden. Dafür nutzt das Werkzeug den Solver **Z3** von Microsoft Research [[5]](#ref-5). Drei Begriffe bauen aufeinander auf [[2]](#ref-2).
 
-**SAT (Erfüllbarkeit).** Ein SAT-Solver löst Rätsel mit Aussagen, die wahr oder falsch sind. Beispiel: Anna ($A$) oder Ben ($B$) kommt zur Feier ($A \lor B$), aber nicht beide ($\neg(A \land B)$), und Ben sagt ab ($\neg B$). Dann muss Anna kommen – das Rätsel ist *erfüllbar* (SAT). Fordert man zusätzlich $\neg A$, gibt es keine Lösung mehr (UNSAT).
+**SAT (Erfüllbarkeit).** Ein SAT-Solver entscheidet, ob sich aussagenlogische Variablen so mit „wahr“ oder „falsch“ belegen lassen, dass eine Formel wahr wird. Beispiel: Anna ($A$) oder Ben ($B$) kommt zur Feier ($A \lor B$), aber nicht beide ($\neg(A \land B)$), und Ben sagt ab ($\neg B$). Dann muss Anna kommen – die Formel ist *erfüllbar* (SAT). Fordert man zusätzlich $\neg A$, gibt es keine Lösung mehr (UNSAT).
 
-**SMT (Erfüllbarkeit modulo Theorien).** Pins sind Zahlen, keine Wahrheitswerte. SMT erweitert SAT deshalb um mathematische Theorien. In dieser Arbeit genügt die Theorie der ganzen Zahlen mit linearen Vergleichen (in Z3 als `QF_LIA` bezeichnet). Jede Pin-Anforderung wird zu *einer* ganzzahligen Variable $v_i$. Bedingungen lassen sich dann direkt formulieren:
+**SMT (Erfüllbarkeit modulo Theorien).** Pins sind Zahlen, keine Wahrheitswerte. SMT erweitert SAT deshalb um mathematische Theorien. In dieser Arbeit genügt die Theorie der ganzen Zahlen mit linearen Vergleichen ohne Quantoren (im Standard SMT-LIB als Logik `QF_LIA` bezeichnet). Jede Pin-Anforderung wird zu *einer* ganzzahligen Variable $v_i$. Bedingungen lassen sich dann direkt formulieren:
 
 - „Die LED muss auf einem erlaubten Pin liegen“: $v_{\text{LED}} = 0 \lor v_{\text{LED}} = 1 \lor \dots$
 - „LED und Relais dürfen nicht denselben Pin haben“: $v_{\text{LED}} \neq v_{\text{Relais}}$
 
-Intern kombiniert Z3 einen SAT-Löser, der Kombinationen durchsucht und aus Sackgassen lernt (*Conflict-Driven Clause Learning*, CDCL), mit einem Löser für die Zahlenbedingungen. Dieses Zusammenspiel heißt DPLL($T$) [[2]](#ref-2). Für das Verständnis dieser Arbeit genügt: Z3 probiert nicht alle Kombinationen durch, sondern schließt ganze Bereiche aussichtsloser Belegungen auf einmal aus.
+Intern kombiniert Z3 einen SAT-Löser, der Kombinationen durchsucht und aus Sackgassen lernt (*Conflict-Driven Clause Learning*, CDCL), mit einem Löser für die Zahlenbedingungen. Dieses Zusammenspiel heißt DPLL($T$) [[2]](#ref-2). Für das Verständnis dieser Arbeit genügt: Z3 probiert nicht alle Kombinationen einzeln durch, sondern schließt aus jedem gefundenen Widerspruch ganze Bereiche aussichtsloser Belegungen auf einmal aus.
 
 ### 2.6 Optimierung mit MaxSMT
 
-Ein gewöhnlicher SMT-Solver liefert *irgendeine* gültige Lösung. Er könnte also auch Pins verschieben, die bereits korrekt waren – für den Nutzer wäre das ärgerlich, weil die Verdrahtung auf der Platine dann ebenfalls geändert werden müsste. Gewünscht ist eine Lösung, die **möglichst wenig ändert**.
+Ein gewöhnlicher SMT-Solver liefert *irgendeine* gültige Lösung. Er könnte also auch Pins verschieben, die bereits korrekt waren – für den Nutzer wäre das ärgerlich, weil dann auch die Verdrahtung auf der Platine geändert werden müsste. Gewünscht ist eine Lösung, die **möglichst wenig ändert**.
 
-Dafür bietet Z3 die Erweiterung $\nu Z$ (`z3.Optimize`) [[3]](#ref-3). Sie unterscheidet zwei Arten von Bedingungen (Abbildung 2.4):
+Dafür bietet Z3 die Optimierungserweiterung $\nu Z$ (Python-Klasse `z3.Optimize`) [[3]](#ref-3). Sie unterscheidet zwei Arten von Bedingungen (Abbildung 2.4):
 
 - **Harte Bedingungen** (`opt.add`) müssen erfüllt sein. Sie bilden die physikalischen Regeln ab.
-- **Weiche Bedingungen** (`opt.add_soft`) sind Wünsche mit einem Gewicht. Z3 sucht unter allen gültigen Lösungen eine, bei der die Summe der Gewichte erfüllter Wünsche maximal ist.
+- **Weiche Bedingungen** (`opt.add_soft`) sind Wünsche mit einem Gewicht. Z3 sucht unter allen gültigen Lösungen eine, bei der die Summe der Gewichte erfüllter Wünsche maximal ist (gleichbedeutend: die Summe der Gewichte verletzter Wünsche minimal).
 
 ```text
   HARTE BEDINGUNGEN (müssen gelten)
@@ -484,11 +489,13 @@ Dafür bietet Z3 die Erweiterung $\nu Z$ (`z3.Optimize`) [[3]](#ref-3). Sie unte
 ```
 *Abbildung 2.4: Harte und weiche Bedingungen in MaxSMT.*
 
-Gelöst wird dieses Problem in Z3 standardmäßig mit dem Verfahren *MaxRes* [[15]](#ref-15). Es sucht wiederholt nach Gruppen von Wünschen, die sich gegenseitig ausschließen, und gibt jeweils den „billigsten“ Wunsch auf. Gewichtetes MaxSMT ist im allgemeinen Fall NP-schwer; für die kleinen Probleme dieser Arbeit (unter 50 Pins, wenige Signale) ist das in der Praxis unproblematisch, wie die Messungen in Abschnitt 7.5 zeigen.
+Z3 löst solche Probleme standardmäßig mit dem Verfahren *MaxRes* [[16]](#ref-16). Es sucht wiederholt nach Gruppen von Wünschen, die sich gegenseitig ausschließen (sogenannte *unerfüllbare Kerne*), und gibt jeweils den „billigsten“ Wunsch auf. Gewichtetes MaxSMT ist im allgemeinen Fall NP-schwer; für die kleinen Probleme dieser Arbeit (unter 50 Pins, wenige Signale) ist das in der Praxis unproblematisch, wie die Messungen in Abschnitt 7.5 zeigen.
 
 ### 2.7 PlatformIO und der Build-Prozess
 
-**PlatformIO** ist eine verbreitete Entwicklungsumgebung für Mikrocontroller [[16]](#ref-16). Ein Projekt wird über die Datei `platformio.ini` konfiguriert; dort stehen unter anderem das Board (z. B. `board = esp32-c3-devkitm-1`), externe Bibliotheken (`lib_deps`) und Zusatzskripte (`extra_scripts`). Ein Zusatzskript mit dem Präfix `pre:` läuft **vor** dem Kompilieren. PlatformIO basiert auf dem Build-System SCons; ein solches Skript kann den Build mit `env.Exit(1)` abbrechen. Genau diesen Mechanismus nutzt `mcu-pin-solver`, um als „Schranke“ vor dem Compiler zu arbeiten.
+**PlatformIO** ist eine verbreitete Entwicklungsumgebung für Mikrocontroller [[17]](#ref-17). Ein Projekt wird über die Datei `platformio.ini` konfiguriert; dort stehen unter anderem das Board (z. B. `board = esp32-c3-devkitm-1`), externe Bibliotheken (`lib_deps`) und Zusatzskripte (`extra_scripts`). Ein Zusatzskript mit dem Präfix `pre:` läuft **vor** dem Kompilieren; dasselbe gilt für das in einer Bibliothek über `library.json` eingetragene `extraScript`. PlatformIO basiert auf dem Build-System SCons; ein solches Skript kann den Build mit `env.Exit(1)` abbrechen. Genau diesen Mechanismus nutzt `mcu-pin-solver`, um als „Schranke“ vor dem Compiler zu arbeiten.
+
+> **Zwischenfazit Kapitel 2:** Tree-Sitter liefert die *Struktur* des Quelltextes ohne Compiler, Z3 liefert *Entscheidungen* über Pin-Belegungen mit mathematischer Garantie bezüglich des Modells, und PlatformIO bietet den *Zeitpunkt* (vor dem Kompilieren), an dem beides eingreifen kann.
 
 ---
 
@@ -496,16 +503,16 @@ Gelöst wird dieses Problem in Z3 standardmäßig mit dem Verfahren *MaxRes* [[1
 
 ### 3.1 Sprachmodelle in der Embedded- und Automatisierungsentwicklung
 
-Englhardt et al. untersuchten, wie gut GPT-3.5, GPT-4 und PaLM 2 Software für eingebettete Systeme schreiben und Fehler darin finden [[6]](#ref-6). Sie bauten dafür einen Prüfstand, auf dem der erzeugte Code automatisch auf echter Hardware mit Sensoren und Aktoren getestet wurde (*Hardware-in-the-Loop*). Ergebnis: Insbesondere GPT-4 erzeugte für viele Aufgaben funktionierenden Code und gab hilfreiche Hinweise zur Fehlersuche, aber nicht zuverlässig beim ersten Versuch. Die Autoren empfehlen daher einen Arbeitsablauf, in dem Mensch und Modell zusammenarbeiten. Die vorliegende Arbeit setzt an diesem Befund an, ersetzt den teuren Hardware-Test für einen Teilaspekt – die Pin-Belegung – aber durch eine statische Prüfung vor dem Kompilieren.
+Englhardt et al. untersuchten, wie gut GPT-3.5, GPT-4 und PaLM 2 Software für eingebettete Systeme schreiben und Fehler darin finden [[6]](#ref-6). Dafür bauten sie einen Prüfstand, auf dem der erzeugte Code automatisch auf echter Hardware mit Sensoren und Aktoren getestet wurde (*Hardware-in-the-Loop*). Insbesondere GPT-4 erzeugte für viele Aufgaben funktionierenden Code und gab hilfreiche Hinweise zur Fehlersuche, allerdings nicht zuverlässig beim ersten Versuch. Die Autoren empfehlen daher einen Arbeitsablauf, in dem Mensch und Modell zusammenarbeiten. Die vorliegende Arbeit setzt an diesem Befund an, ersetzt den aufwendigen Hardware-Test für einen Teilaspekt – die Pin-Belegung – aber durch eine statische Prüfung vor dem Kompilieren.
 
-Am nächsten verwandt ist **LLM4PLC** von Fakih et al. [[10]](#ref-10). Dort erzeugt ein Sprachmodell Programme für speicherprogrammierbare Steuerungen (SPS). Der Code wird in einer Schleife durch Syntaxprüfung, Compiler und einen formalen Modellprüfer geschickt; deren Fehlermeldungen gehen als Rückmeldung an das Modell zurück, bis alle Prüfungen bestanden sind. Das ist dasselbe Grundprinzip wie das LLM-Modulo-Framework [[14]](#ref-14) und wie in dieser Arbeit. Unterschiede bestehen im Anwendungsgebiet (SPS statt Mikrocontroller), im Prüfgegenstand (Programmverhalten statt Pin-Belegung) und darin, dass `mcu-pin-solver` nicht nur Fehler meldet, sondern eine konkrete optimierte Korrektur berechnet.
+Am nächsten verwandt ist **LLM4PLC** von Fakih et al. [[10]](#ref-10). Dort erzeugt ein Sprachmodell Programme für speicherprogrammierbare Steuerungen (SPS). Der Code wird in einer Schleife durch Syntaxprüfung, Compiler und einen formalen Modellprüfer geschickt; deren Fehlermeldungen gehen als Rückmeldung an das Modell zurück, bis alle Prüfungen bestanden sind. Das entspricht dem Grundprinzip des LLM-Modulo-Frameworks [[15]](#ref-15) und dieser Arbeit. Unterschiede bestehen im Anwendungsgebiet (SPS statt Mikrocontroller), im Prüfgegenstand (Programmverhalten statt Pin-Belegung) und darin, dass `mcu-pin-solver` nicht nur Fehler meldet, sondern selbst eine konkrete, optimierte Korrektur berechnet.
 
 ### 3.2 Werkzeuge der Embedded-Praxis
 
-- **Statische Analysewerkzeuge für C++** wie `clang-tidy` oder `cppcheck` finden Programmierfehler wie Speicherlecks oder Nullzeiger. Hardware-Wissen über Pins besitzen sie nicht.
-- **Grafische Konfiguratoren der Hersteller** wie STM32CubeMX arbeiten in umgekehrter Richtung: Man wählt Pins in einer Oberfläche, Konflikte werden dort angezeigt, und daraus wird Code erzeugt. Ein Sprachmodell erzeugt aber direkt Code; eine nachträgliche Prüfung von vorhandenem Arduino-Code bieten diese Werkzeuge nicht.
-- **Hardware-Beschreibungen im Betriebssystem**, etwa der DeviceTree im Echtzeitbetriebssystem Zephyr, legen Pins in eigenen Dateien fest. Im Arduino- und PlatformIO-Umfeld, das beim Prototyping verbreitet ist, stehen Pins dagegen direkt im C++-Code.
-- **Typsichere Hardware-Bibliotheken in Rust** (z. B. `embedded-hal`) stellen jeden Pin als Objekt dar, das nur einmal an einen Treiber übergeben werden kann. Eine doppelte Verwendung desselben Pins scheitert so bereits beim Kompilieren. Für den großen Bestand an Arduino-C++-Code steht das nicht zur Verfügung, und eine Ersatzbelegung wird nicht berechnet.
+- **Statische Analysewerkzeuge für C++** wie `clang-tidy` oder `cppcheck` finden allgemeine Programmierfehler wie Speicherlecks oder Nullzeiger-Zugriffe. Wissen über die Pin-Eigenschaften eines bestimmten Chips besitzen sie nicht.
+- **Grafische Konfiguratoren der Hersteller** wie STM32CubeMX [[19]](#ref-19) arbeiten in umgekehrter Richtung: Man wählt Pins in einer Oberfläche, Konflikte werden dort angezeigt, und daraus wird Initialisierungscode erzeugt. Ein Sprachmodell erzeugt aber direkt Code; eine nachträgliche Prüfung von vorhandenem Arduino-Code bieten diese Werkzeuge nicht.
+- **Hardware-Beschreibungen im Betriebssystem**, etwa der *Devicetree* im Echtzeitbetriebssystem Zephyr [[21]](#ref-21), legen Pins in eigenen Beschreibungsdateien fest, die beim Build ausgewertet werden. Im Arduino- und PlatformIO-Umfeld, das beim Prototyping verbreitet ist, stehen Pins dagegen direkt im C++-Code.
+- **Typsichere Hardware-Abstraktionen in Rust** (auf Basis von `embedded-hal` [[18]](#ref-18)) stellen Pins häufig als eigene Typen dar, die nach dem Ownership-Prinzip nur einmal an einen Treiber übergeben werden können. Eine doppelte Verwendung desselben Pins scheitert so bereits beim Kompilieren. Für den großen Bestand an Arduino-C++-Code steht das nicht zur Verfügung, und eine Ersatzbelegung wird nicht berechnet.
 
 ### 3.3 Einordnung und Forschungslücke
 
@@ -515,14 +522,14 @@ Tabelle 3.1 fasst die Einordnung zusammen. Es handelt sich um eine qualitative E
 | :--- | :---: | :---: | :---: | :---: |
 | C++-Linter | ja | nein | nein | nein |
 | Hersteller-Konfigurator | nein | ja | nein (zeigt Konflikte) | nein |
-| Zephyr DeviceTree | nein | ja | nein | nein |
+| Zephyr Devicetree | nein | ja | nein | nein |
 | Rust-HAL | nein | teilweise | nein | nein |
 | LLM4PLC [[10]](#ref-10) | nein (SPS-Code) | – | über das LLM | ja |
 | `mcu-pin-solver` | ja (Teilmenge, vgl. 8.2) | ja (JSON-Profil) | ja (Z3) | ja (Prompt manuell kopiert) |
 
 *Tabelle 3.1: Einordnung verwandter Ansätze (Einschätzung des Verfassers).*
 
-Die Lücke, die diese Arbeit adressiert, ist damit: ein Werkzeug, das bestehenden Arduino-/PlatformIO-Code ohne Compiler-Werkzeugkette auf Pin-Konflikte prüft, das Hardware-Wissen austauschbar hält und eine optimierte Korrektur in einer Form zurückgibt, die ein Sprachmodell direkt verarbeiten kann.
+Daraus ergibt sich die Forschungslücke, die diese Arbeit adressiert: Es fehlt ein Werkzeug, das bestehenden Arduino-/PlatformIO-Code ohne Compiler-Werkzeugkette auf Pin-Konflikte prüft, das Hardware-Wissen austauschbar hält und eine optimierte Korrektur in einer Form zurückgibt, die ein Sprachmodell direkt verarbeiten kann.
 
 ---
 
@@ -532,9 +539,9 @@ Die Lücke, die diese Arbeit adressiert, ist damit: ein Werkzeug, das bestehende
 
 Das System hat drei Nutzergruppen:
 
-1. **Embedded-Entwicklerin bzw. -Entwickler.** Baut ein Projekt in PlatformIO oder ruft das Werkzeug auf der Kommandozeile auf. Erwartet, dass Pin-Fehler vor dem Kompilieren gemeldet werden, und zwar verständlich.
-2. **Sprachmodell.** Erzeugt den Code und erhält im Fehlerfall einen Prompt, nach dem es nur die betroffenen Pins ändern soll.
-3. **Maintainer.** Ergänzt Unterstützung für weitere Chips, indem eine JSON-Datei angelegt wird – ohne Python-Code zu ändern.
+1. **Embedded-Entwicklerinnen und -Entwickler** bauen ein Projekt in PlatformIO oder rufen das Werkzeug auf der Kommandozeile auf. Sie erwarten, dass Pin-Fehler vor dem Kompilieren verständlich gemeldet werden.
+2. **Das Sprachmodell** erzeugt den Code und erhält im Fehlerfall einen Prompt, nach dem es nur die betroffenen Pins ändern soll.
+3. **Maintainer** ergänzen Unterstützung für weitere Chips, indem sie eine JSON-Datei anlegen – ohne Python-Code zu ändern.
 
 ### 4.2 Funktionale Anforderungen
 
@@ -555,17 +562,17 @@ Das System hat drei Nutzergruppen:
 
 ### 4.3 Nicht-funktionale Anforderungen
 
-Die Qualitätsmerkmale orientieren sich an der Norm ISO/IEC 25010.
+Die Qualitätsmerkmale orientieren sich am Produktqualitätsmodell der Norm ISO/IEC 25010 [[14]](#ref-14); die zugehörigen Merkmale der Norm sind in Klammern angegeben.
 
-| ID | Merkmal | Abnahmekriterium |
+| ID | Merkmal (ISO/IEC 25010) | Abnahmekriterium |
 | :--- | :--- | :--- |
-| NFA-01 | Erweiterbarkeit | Der Python-Code enthält keine chipspezifischen Pin-Nummern oder Chipnamen; ein neuer Chip erfordert nur eine JSON-Datei. |
-| NFA-02 | Zeitverhalten | Ein Prüflauf für ein typisches Projekt (bis ca. 20 Dateien und 20 Pins) dauert deutlich unter 1 s. |
-| NFA-03 | Portabilität | Lauffähig unter Windows und Linux ohne installierte Compiler-Werkzeugkette des Zielchips. |
-| NFA-04 | Korrektheit der Vorschläge | Jeder ausgegebene Vorschlag erfüllt alle harten Regeln des Hardware-Profils. |
-| NFA-05 | Paket-Hygiene | Als Bibliothek eingebunden, wird kein Beispielcode der Bibliothek mitkompiliert; der CLI-Aufruf erzeugt keine Python-Warnungen. |
-| NFA-06 | Testbarkeit | Eine automatisierte Testsuite deckt alle Fehlerklassen ab und läuft bei jeder Änderung in der CI. |
-| NFA-07 | Analysierbarkeit | Die Kernlogik bleibt unter 400 Zeilen Python und ist in klar getrennte Module gegliedert. |
+| NFA-01 | Erweiterbarkeit (Wartbarkeit – Modifizierbarkeit) | Der Python-Code enthält keine chipspezifischen Pin-Nummern oder Chipnamen; ein neuer Chip erfordert nur eine JSON-Datei. |
+| NFA-02 | Zeitverhalten (Leistungseffizienz) | Ein Prüflauf für ein typisches Projekt (bis ca. 20 Dateien und 20 Pins) dauert deutlich unter 1 s. |
+| NFA-03 | Portabilität (Übertragbarkeit – Anpassbarkeit) | Lauffähig unter Windows und Linux ohne installierte Compiler-Werkzeugkette des Zielchips. |
+| NFA-04 | Korrektheit der Vorschläge (Funktionale Eignung – Korrektheit) | Jeder ausgegebene Vorschlag erfüllt alle harten Regeln des Hardware-Profils. |
+| NFA-05 | Paket-Hygiene (Übertragbarkeit – Installierbarkeit) | Als Bibliothek eingebunden, wird kein Beispielcode der Bibliothek mitkompiliert; der CLI-Aufruf erzeugt keine Python-Warnungen. |
+| NFA-06 | Testbarkeit (Wartbarkeit) | Eine automatisierte Testsuite deckt alle Fehlerklassen ab und läuft bei jeder Änderung in der CI. |
+| NFA-07 | Analysierbarkeit (Wartbarkeit) | Die Kernlogik bleibt unter 400 Zeilen Python und ist in klar getrennte Module gegliedert. |
 
 *Tabelle 4.2: Nicht-funktionale Anforderungen.*
 
@@ -590,7 +597,7 @@ Damit spätere Änderungen – durch Menschen oder KI-Assistenten – die Archit
 
 ## 5 Konzeption und Entwurfsentscheidungen
 
-Dieses Kapitel begründet die vier wichtigsten Entwurfsentscheidungen und führt dann ein vollständiges Beispiel durch das System. Für die Auswahl der Verfahren werden Nutzwertanalysen verwendet. Dabei ist eine Einschränkung offen zu benennen: Gewichte und Punkte wurden vom Verfasser festgelegt, und zwar in Kenntnis der späteren Entscheidung. Nutzwertanalysen machen eine Entscheidung nachvollziehbar, sie beweisen sie nicht. Deshalb wird jeweils auch geprüft, wie stark sich die Gewichte ändern müssten, damit eine andere Option gewinnt (Sensitivität).
+Dieses Kapitel begründet die vier wichtigsten Entwurfsentscheidungen und führt anschließend ein vollständiges Beispiel durch das System. Für die Auswahl der Verfahren werden Nutzwertanalysen verwendet. Dabei ist eine Einschränkung offen zu benennen: Gewichte und Punkte wurden vom Verfasser festgelegt, und zwar in Kenntnis der späteren Entscheidung. Nutzwertanalysen machen eine Entscheidung nachvollziehbar, beweisen sie aber nicht. Deshalb wird jeweils zusätzlich geprüft, wie stark sich die Gewichte ändern müssten, damit eine andere Option gewinnt (Sensitivitätsanalyse).
 
 ### 5.1 Entscheidung 1: Verfahren zur Quelltextanalyse
 
@@ -613,9 +620,9 @@ Bewertet wurde auf einer Skala von 1 (ungenügend) bis 5 (sehr gut):
 
 *Tabelle 5.1: Nutzwertanalyse Quelltextanalyse.*
 
-**Begründung.** Reguläre Ausdrücke scheitern an K1 (Abschnitt 2.3). `libclang` ist semantisch am stärksten: Es würde Makros wie `#define LED (BASE + 2)` ausrechnen und nur den aktiven `#ifdef`-Zweig betrachten. Dafür benötigt es aber die Header des Zielsystems (`Arduino.h`, ESP-IDF) und die richtigen Compiler-Optionen, sonst entstehen Fehler und unvollständige Bäume. Tree-Sitter kommt ohne all das aus.
+**Begründung.** Reguläre Ausdrücke scheitern an K1 (Abschnitt 2.3). `libclang` ist semantisch am stärksten: Es würde Makros wie `#define LED (BASE + 2)` ausrechnen und nur den aktiven `#ifdef`-Zweig betrachten. Dafür benötigt es aber die Header des Zielsystems (`Arduino.h`, ESP-IDF) und die passenden Compiler-Optionen; fehlen diese, entstehen Fehlermeldungen und unvollständige Bäume. Tree-Sitter kommt ohne all das aus.
 
-**Sensitivität.** Der Abstand zwischen C und B entsteht vor allem durch K2, K3 und K5. Erhöht man das Gewicht von K4 und verkleinert die übrigen anteilig, gewinnt `libclang` erst ab einem Gewicht von etwa 36 % für K4. Die Entscheidung ist also stabil, solange Portabilität wichtiger ist als semantische Tiefe. Der Preis dieser Entscheidung zeigt sich in Kapitel 8: Mehrere der dort beschriebenen Grenzen (Makro-Ausdrücke, `#ifdef`) wären mit `libclang` lösbar.
+**Sensitivität.** Der Abstand zwischen C und B entsteht vor allem durch K2, K3 und K5. Erhöht man das Gewicht von K4 und verkleinert die übrigen Gewichte anteilig, gewinnt `libclang` erst ab einem Gewicht von etwa 36 % für K4. Die Entscheidung ist also stabil, solange Portabilität wichtiger ist als semantische Tiefe. Der Preis dieser Entscheidung zeigt sich in Kapitel 8: Mehrere der dort beschriebenen Grenzen (Makro-Ausdrücke, `#ifdef`) wären mit `libclang` lösbar.
 
 ### 5.2 Entscheidung 2: Verfahren zur Konfliktlösung
 
@@ -639,7 +646,7 @@ Für die Berechnung einer Ersatzbelegung wurden vier Optionen verglichen:
 
 **Begründung.** Eine Heuristik ist einfach, findet aber nicht immer die beste Lösung. Ein Gedankenexperiment zeigt das: Liegen bei aktivem WLAN eine LED und ein Analogsensor beide auf GPIO 1 und sind die übrigen ADC1-Pins 0, 3 und 4 schon belegt, dann würde eine Heuristik, die das zuerst deklarierte Signal (die LED) behält, den Sensor auf den einzigen freien ADC1-Pin 2 schieben – einen Strapping-Pin. Ist auch Pin 2 belegt, findet sie gar keine Lösung, obwohl eine existiert: Die LED könnte ausweichen. Ein Optimierer findet diese Lösung (vgl. Abschnitt 6.5, Fall 3).
 
-SMT ohne Optimierung liefert irgendeine gültige Belegung und verschiebt dabei womöglich korrekte Pins. MILP ist für das Problem fachlich genauso geeignet wie MaxSMT und liefert ebenfalls optimale Lösungen. Der Unterschied liegt in der Formulierung: In MILP müsste man für jede Kombination aus Signal und Pin eine 0/1-Variable anlegen und „verschieden“ über lineare Ungleichungen ausdrücken. In Z3 genügt eine ganzzahlige Variable je Signal und eine Bedingung $v_a \neq v_b$. MaxSMT wurde daher vor allem wegen der kompakteren, lesbareren Modellierung gewählt.
+SMT ohne Optimierung liefert irgendeine gültige Belegung und verschiebt dabei womöglich korrekte Pins. MILP ist für das Problem fachlich ebenso geeignet wie MaxSMT und liefert ebenfalls optimale Lösungen. Der Unterschied liegt in der Formulierung: In MILP müsste man für jede Kombination aus Signal und Pin eine 0/1-Variable anlegen und „verschieden“ über lineare Ungleichungen ausdrücken. In Z3 genügen eine ganzzahlige Variable je Signal und eine Bedingung $v_a \neq v_b$. MaxSMT wurde daher vor allem wegen der kompakteren und besser lesbaren Modellierung gewählt.
 
 **Sensitivität.** Der Vorsprung von MaxSMT gegenüber MILP beruht allein auf K2. Wer die Modellierungsfreundlichkeit für unwichtig hält, erhält einen Gleichstand zwischen den beiden Verfahren.
 
@@ -650,11 +657,11 @@ Unabhängig vom Solver stellt sich die Frage, *wie* Fehler gemeldet werden. Wür
 1. **Stufe 1 – Diagnose:** Ein einfacher Python-Durchlauf prüft jedes Signal einzeln gegen das Hardware-Profil und erzeugt für jeden Verstoß eine Klartextmeldung. Sind alle Signale gültig, endet die Prüfung hier mit SAT, und Z3 wird gar nicht gestartet.
 2. **Stufe 2 – Reparatur:** Nur wenn Stufe 1 Fehler gefunden hat, berechnet Z3 eine Ersatzbelegung.
 
-So bekommt der Nutzer alle Fehlerursachen auf einmal (vgl. Szenario 03 mit drei Fehlern), und fehlerfreie Builds werden nicht verlangsamt.
+So erhält der Nutzer alle Fehlerursachen auf einmal (vgl. Szenario 03 mit drei Fehlern), und fehlerfreie Builds werden nicht verlangsamt.
 
 ### 5.4 Entscheidung 4: Hardware-Wissen als Daten
 
-Alle Eigenschaften eines Chips – welche Pins es gibt, was sie können, welche reserviert sind und welche Regeln gelten – stehen in einer JSON-Datei, nicht im Programmcode (INV-01). Dadurch entsteht eine klare Arbeitsteilung: Der Python-Code weiß, *wie* geprüft wird; die JSON-Datei weiß, *was* für einen Chip gilt. Ein neuer Chip erfordert nur eine neue Datei. Der Nachteil: Die Qualität der Prüfung hängt vollständig von der Qualität dieser Datei ab. Ein falscher Eintrag führt zu falschen Ergebnissen, ohne dass der Code das bemerken kann (vgl. Abschnitt 8.2 zu ADC2 auf dem ESP32-C3).
+Alle Eigenschaften eines Chips – welche Pins es gibt, was sie können, welche reserviert sind und welche Regeln gelten – stehen in einer JSON-Datei, nicht im Programmcode (INV-01). Dadurch entsteht eine klare Arbeitsteilung: Der Python-Code weiß, *wie* geprüft wird; die JSON-Datei weiß, *was* für einen Chip gilt. Ein neuer Mikrocontroller erfordert nur eine neue Datei (eine Vorlage dafür enthält Anhang F). Der Nachteil: Die Qualität der Prüfung hängt vollständig von der Qualität dieser Datei ab. Ein falscher Eintrag führt zu falschen Ergebnissen, ohne dass der Code das bemerken kann (vgl. Abschnitt 8.2 zu ADC2 auf dem ESP32-C3).
 
 ### 5.5 Gesamtarchitektur
 
@@ -708,7 +715,7 @@ void loop() {
 ```
 *Listing 5.1: Szenario 0 (`tests/scenarios/00_flash_and_wifi_conflict.cpp`).*
 
-**Schritt 1 – Profil laden.** Aus `boards/esp32-c3.json` ergibt sich unter anderem: GPIO 12–17 sind reserviert, GPIO 5 hat nur `adc2`, ADC1 liegt auf GPIO 0–4, Strapping-Pins sind 2, 8 und 9, aktives WLAN sperrt `adc2`, aktive USB-Konsole sperrt GPIO 18 und 19.
+**Schritt 1 – Profil laden.** Aus `boards/esp32-c3.json` ergibt sich unter anderem: GPIO 12–17 sind reserviert, GPIO 5 hat nur `adc2`, ADC1 liegt auf GPIO 0–4, Strapping-Pins sind 2, 8 und 9, aktives WLAN sperrt `adc2`, eine aktive USB-Konsole sperrt GPIO 18 und 19.
 
 **Schritt 2 – Quelltext analysieren.** Der Parser findet `STATUS_LED = 12` (der Zeilenkommentar im `#define` wird entfernt), `SOIL_SENSOR = 5` und `RELAY_PIN = 4`. Die Zeile `int reading = analogRead(SOIL_SENSOR);` wird nicht als Pin gezählt, weil rechts kein Zahlenwert, sondern ein Funktionsaufruf steht. Weil `SOIL_SENSOR` in `analogRead` vorkommt, braucht es die Fähigkeit `adc`. `WiFi.begin` und `Serial.begin` aktivieren die Module `wifi` und `usb_serial`. Ergebnis:
 
@@ -784,7 +791,7 @@ Dieses Kapitel beschreibt die Umsetzung von `mcu-pin-solver` in Version 0.1.0 an
 
 ### 6.1 Repository und Softwareumgebung
 
-Das System gliedert sich in vier Schichten: die Integration (`pio_hook.py`, `library.json`, `pyproject.toml`), die Orchestrierung und Ausgabe (`cli.py`, `__init__.py`), den Verifikationskern (`parser.py`, `solver.py`) und die deklarativen Hardware-Daten (`boards/*.json`). Tabelle 6.1 gibt eine Übersicht aller Projektdateien.
+Das System gliedert sich in vier Schichten: die Integration (`pio_hook.py`, `library.json`, `pyproject.toml`), die Orchestrierung und Ausgabe (`cli.py`, `__init__.py`), den Prüfkern (`parser.py`, `solver.py`) und die deklarativen Hardware-Daten (`boards/*.json`). Tabelle 6.1 gibt eine Übersicht über alle Projektdateien.
 
 | Datei / Ordner | Umfang | Aufgabe |
 | :--- | :--- | :--- |
@@ -800,18 +807,18 @@ Das System gliedert sich in vier Schichten: die Integration (`pio_hook.py`, `lib
 | `src/main.cpp` und `platformio.ini` | 56 + 11 Zeilen | Demo-Projekt für lokale `pio run`-Tests |
 | `tests/run_tests.py` und `tests/scenarios/` | 55 Zeilen + 7 Fälle | Regressionstestsuite für neun Prüfkonstellationen |
 | `.github/workflows/ci.yml` | 18 Zeilen YAML | CI-Workflow (`ubuntu-latest`, Python `3.12`) |
-| `README.md` und `AGENTS.md` | 85 + 95 Zeilen | Installationsanleitung, Prompt-Vorlage und Architektur-Invarianten |
+| `README.md` und `AGENTS.md` | 85 + 102 Zeilen | Installationsanleitung, Prompt-Vorlage und Architektur-Invarianten |
 
 *Tabelle 6.1: Dateien des Repositories.*
 
-Die vier Module des Python-Pakets `mcu_validator` umfassen zusammen 337 Zeilen; selbst unter Einrechnung von `pio_hook.py` ergibt sich ein Gesamtumfang von 379 Zeilen Python-Code (inklusive Leerzeilen und Kommentare). Die Vorgabe NFA-07 (unter 400 Zeilen Kernlogik) ist damit eingehalten.
+Die vier Module des Python-Pakets `mcu_validator` umfassen zusammen 337 Zeilen; zusammen mit `pio_hook.py` ergeben sich 379 Zeilen Python-Code (jeweils einschließlich Leerzeilen und Kommentaren). Die Vorgabe NFA-07 (unter 400 Zeilen Kernlogik) ist damit eingehalten.
 
 ### 6.2 Hardware-Profile
 
-Gemäß INV-01 liegen sämtliche GPIO-Nummern, Fähigkeiten und Sperrregeln in JSON-Dateien im Ordner `boards/`. Jedes Profil besteht aus fünf Sektionen (Listing 6.1):
+Gemäß INV-01 liegen sämtliche GPIO-Nummern, Fähigkeiten und Sperrregeln in JSON-Dateien im Ordner `boards/`. Neben den beschreibenden Feldern `mcu` und `description` besteht jedes Profil aus fünf Abschnitten (Listing 6.1):
 
-1. **`pins`:** Bildet ausschließlich physisch herausgeführte Pin-Nummern (als Strings) auf ihre Eigenschaften ab (`capabilities`, `strapping`, `reserved` und optional `note`). Nicht existierende Pins (wie GPIO 11 auf dem ESP32-C3 oder GPIO 22–25 auf dem ESP32-S3) fehlen als Schlüssel. Reservierte Pins tragen `"reserved": true` und eine leere Fähigkeitsliste.
-2. **`capability_aliases`:** Löst allgemeine Fähigkeiten aus dem C++-Code (`"adc"`) auf chipspezifische Bänke (`["adc1", "adc2"]`) auf.
+1. **`pins`:** Bildet ausschließlich physisch herausgeführte Pin-Nummern (als Zeichenketten) auf ihre Eigenschaften ab (`capabilities`, `strapping`, `reserved` und optional `note`). Nicht existierende Pins (wie GPIO 11 auf dem ESP32-C3 oder GPIO 22–25 auf dem ESP32-S3) fehlen als Schlüssel. Reservierte Pins tragen `"reserved": true` und eine leere Fähigkeitsliste.
+2. **`capability_aliases`:** Löst allgemeine Fähigkeiten aus dem C++-Code (`"adc"`) in chipspezifische Wandlergruppen (`["adc1", "adc2"]`) auf.
 3. **`shared_capabilities`:** Nennt Bus-Fähigkeiten (`["i2c", "spi"]`), bei denen mehrere Signale denselben Pin teilen dürfen.
 4. **`resource_triggers`:** Ordnet Peripherienamen (`"wifi"`, `"usb_serial"`) den auslösenden C++-Aufrufen zu (`["WiFi.begin", "WiFi.softAP"]`, `["Serial.begin"]`).
 5. **`conflict_rules`:** Formuliert kontextabhängige Verbote mit `when_resource_active` in Kombination mit `forbidden_capability` oder `forbidden_pins`.
@@ -853,7 +860,7 @@ Gemäß INV-01 liegen sämtliche GPIO-Nummern, Fähigkeiten und Sperrregeln in J
 ```
 *Listing 6.1: Auszug aus `boards/esp32-c3.json` (vollständig in Anhang A).*
 
-Listing 6.2 zeigt, wie `load_board_data` aus einem PlatformIO-Board-Namen (z. B. `esp32-c3-devkitm-1`) das passende Profil auswählt. Der Name wird in Kleinbuchstaben mit Bindestrich normalisiert und per Teilstring-Suche mit den alphabetisch sortierten Dateistämmen in `boards/` abgeglichen. *(Hinweis zur Skalierung: Kommen künftig Profile mit verschachtelten Präfixen wie `esp32.json` neben `esp32-c3.json` hinzu, muss nach absteigender Namenslänge sortiert werden, damit nicht das kürzere Präfix zuerst greift.)*
+Listing 6.2 zeigt, wie `load_board_data` aus einem PlatformIO-Board-Namen (z. B. `esp32-c3-devkitm-1`) das passende Profil auswählt. Der Name wird in Kleinbuchstaben umgewandelt, Unterstriche werden durch Bindestriche ersetzt, und anschließend wird geprüft, ob einer der alphabetisch sortierten Dateinamen in `boards/` als Teilzeichenkette darin vorkommt. *(Hinweis zur Skalierung: Kommen künftig Profile mit verschachtelten Präfixen wie `esp32.json` neben `esp32-c3.json` hinzu, muss nach absteigender Namenslänge sortiert werden, damit nicht das kürzere Präfix zuerst greift.)*
 
 ```python
 BOARDS_DIR = Path(__file__).resolve().parent.parent / "boards"
@@ -882,15 +889,17 @@ Wie stark sich bereits zwei verwandte Chips der ESP32-Familie unterscheiden, fas
 
 *Tabelle 6.2: Vergleich der Hardware-Profile ESP32-C3 und ESP32-S3.*
 
+Die Profile bilden die Hardware bewusst vereinfacht und eher vorsichtig ab. So lassen sich I2C und SPI über die GPIO-Matrix technisch auf fast jeden freien Pin legen (Abschnitt 1.3); das ESP32-C3-Profil erlaubt `i2c` jedoch nur auf GPIO 6–9 und `spi` nur auf GPIO 6, 7 und 10. Solche Festlegungen schränken die Reparaturvorschläge ein, führen aber nicht zu ungültigen Vorschlägen.
+
 ### 6.3 Parser
 
-Der Parser in `mcu_validator/parser.py` arbeitet in drei Schritten: Dateiauflösung, Syntaxbaum-Durchlauf und Klassifikation.
+Der Parser in `mcu_validator/parser.py` arbeitet in drei Schritten: Dateiauflösung, Durchlauf durch den Syntaxbaum und Klassifikation.
 
-**1. Dateiauflösung (`_resolve_source_files`) und Kollisionsschutz (`_record_pin`).** Übergibt der Nutzer oder der PlatformIO-Hook eine einzelne Datei, wird direkt diese geparst. Wird dagegen ein Verzeichnis `src/` übergeben, bindet `_resolve_source_files` automatisch ein vorhandenes Geschwisterverzeichnis `include/` ein und sucht rekursiv alle Dateien mit den Endungen `.h`, `.hpp`, `.c`, `.cpp` und `.ino`. Zwei Details verhindern dabei subtile Fehler:
-- Header-Dateien (`.h`, `.hpp`) werden vor den übrigen Quelldateien sortiert, sodass zentrale Definitionen aus `include/` zuerst gelesen werden.
-- Unterordner namens `tests` oder `.pio` werden auf Basis des *relativen* Pfades ab dem Suchordner ausgeblendet (`p.relative_to(d).parts`). Eine Prüfung gegen den vollständigen Pfad `p.parts` würde fehlgehen, wenn der zu prüfende Projektordner selbst unterhalb eines Ordners `tests/` liegt – wie beim Testszenario `tests/scenarios/06_multi_file_project/src`.
+**1. Dateiauflösung (`_resolve_source_files`) und Kollisionsschutz (`_record_pin`).** Übergibt der Nutzer oder der PlatformIO-Hook eine einzelne Datei, wird direkt diese geparst. Wird dagegen ein Verzeichnis `src/` übergeben, bindet `_resolve_source_files` automatisch ein vorhandenes Nachbarverzeichnis `include/` ein und sucht rekursiv alle Dateien mit den Endungen `.h`, `.hpp`, `.c`, `.cpp` und `.ino`. Zwei Details verhindern dabei subtile Fehler:
+- Header-Dateien (`.h`, `.hpp`) werden vor den übrigen Quelldateien einsortiert, sodass zentrale Definitionen aus `include/` zuerst gelesen werden.
+- Unterordner namens `tests` oder `.pio` werden anhand des *relativen* Pfades ab dem Suchordner ausgeblendet (`p.relative_to(d).parts`). Eine Prüfung gegen den vollständigen Pfad `p.parts` würde fehlschlagen, wenn der zu prüfende Projektordner selbst unterhalb eines Ordners `tests/` liegt – wie beim Testszenario `tests/scenarios/06_multi_file_project/src`.
 
-Werden Konstanten über mehrere Dateien hinweg definiert, sorgt `_record_pin` (Listing 6.3) für die Invariante INV-03: Identische Werte desselben Bezeichners werden dedupliziert; widersprechen sich zwei Dateien (z. B. `STATUS_LED = 8` in `pins.h` und `#define STATUS_LED 12` in `motor.cpp`), bleibt der zweite Eintrag datei-qualifiziert erhalten und löst im Solver einen Konflikt aus.
+Werden Konstanten über mehrere Dateien hinweg definiert, sorgt `_record_pin` (Listing 6.3) für die Invariante INV-03: Identische Werte desselben Bezeichners werden zusammengefasst; widersprechen sich zwei Dateien (z. B. `STATUS_LED = 8` in `pins.h` und `#define STATUS_LED 12` in `motor.cpp`), bleibt der zweite Eintrag unter einem um den Dateinamen ergänzten Namen erhalten und löst im Solver eine eigene Prüfung aus.
 
 ```python
 def _record_pin(pins_in_code, name, pin_val, file_path):
@@ -902,10 +911,10 @@ def _record_pin(pins_in_code, name, pin_val, file_path):
 ```
 *Listing 6.3: Kollisionsschutz über Dateigrenzen (`_record_pin`, `mcu_validator/parser.py`, Z. 67–72).*
 
-**2. AST-Durchlauf.** Für jede Datei erzeugt `tree-sitter-cpp` einen Syntaxbaum (`AST_PARSER.parse(file_path.read_bytes())`), über den der rekursive Generator `_walk_ast` läuft. Ausgewertet werden drei Knotentypen (Listing 6.4):
-- `preproc_def` (`#define NAME ZAHL`): Da Tree-Sitter einen eventuellen Zeilenkommentar in `preproc_arg` belässt (Abschnitt 2.4), wird dieser lokal entfernt, bevor `.isdigit()` eine reine nicht-negative Ganzzahl prüft.
-- `declaration` außerhalb von `for_statement` (`int` oder `uint8_t`): Die Prüfung auf `node.parent.type != "for_statement"` schließt `for (int i = 0; ...)` aus. Auch `const int` und `constexpr int` werden erfasst, weil Qualifizierer im Baum als eigene `type_qualifier`-Geschwisterknoten stehen und `child_by_field_name("type")` weiterhin `"int"` bzw. `"uint8_t"` liefert (Abschnitt 7.4, Experiment `i`). Die rechte Seite eines `init_declarator` muss sowohl ein `identifier`-Ziel als auch ein direktes `number_literal` mit Ziffern aufweisen.
-- `call_expression`: Der Funktionsausdruck wird um Whitespace bereinigt (`fn_name`), und aus dem Argumentteilbaum (`arguments`) werden alle `identifier`-Knoten gesammelt.
+**2. Durchlauf durch den Syntaxbaum.** Für jede Datei erzeugt `tree-sitter-cpp` einen Syntaxbaum (`AST_PARSER.parse(file_path.read_bytes())`), den der rekursive Generator `_walk_ast` Knoten für Knoten besucht. Ausgewertet werden drei Knotentypen (Listing 6.4):
+- `preproc_def` (`#define NAME ZAHL`): Da Tree-Sitter einen eventuellen Zeilenkommentar in `preproc_arg` belässt (Abschnitt 2.4), wird dieser lokal entfernt, bevor `.isdigit()` prüft, ob eine nicht-negative Ganzzahl vorliegt.
+- `declaration` außerhalb von `for_statement` (Typ `int` oder `uint8_t`): Die Prüfung `node.parent.type != "for_statement"` schließt `for (int i = 0; ...)` aus. Auch `const int` und `constexpr int` werden erfasst, weil Qualifizierer im Baum als eigene `type_qualifier`-Geschwisterknoten stehen und `child_by_field_name("type")` weiterhin `"int"` bzw. `"uint8_t"` liefert (Abschnitt 7.4, Experiment `i`). Der `init_declarator` muss einen einfachen Bezeichner (`identifier`) und als Wert ein direktes Zahlenliteral (`number_literal`) enthalten.
+- `call_expression`: Der Funktionsausdruck wird um Leerraum bereinigt (`fn_name`), und aus dem Argumentteilbaum (`arguments`) werden alle `identifier`-Knoten gesammelt.
 
 ```python
 for node in _walk_ast(tree.root_node):
@@ -946,33 +955,35 @@ for node in _walk_ast(tree.root_node):
 ```
 *Listing 6.4: Extraktion von Pin-Deklarationen und Aufrufen im Parser (`mcu_validator/parser.py`, Z. 86–120).*
 
-**3. Fähigkeitenklassifikation und Auslöser.** Im Anschluss ordnet `parse_cpp_file` jedes gefundene Pin-Symbol einer einzigen Fähigkeit zu (Tabelle 6.3). Schließlich werden die `resource_triggers` des Hardware-Profils über einen exakten oder punktbegrenzten Endungsvergleich (`fn == pat or fn.endswith("." + pat)`) gegen alle aufgerufenen Funktionen geprüft. So aktiviert `board.WiFi.begin()` das Modul `wifi`, ein unbeteiligtes `myWiFi.begin()` hingegen nicht.
+> **Wichtige Einschränkung:** Die Schritte 1 und 2 erfassen *jede* Ganzzahlkonstante dieser Form als Pin-Kandidaten – unabhängig davon, ob sie später überhaupt in einem Pin-Aufruf wie `pinMode` verwendet wird. Eine Konstante wie `#define BAUD_RATE 115200` oder ein lokaler Zähler `int blinkCount = 0;` wird deshalb ebenfalls als Pin geprüft. Abschnitt 7.4 (Experiment `b`) und Abschnitt 8.2 (Grenze 2) untersuchen die Folgen.
+
+**3. Klassifikation der Fähigkeiten und Auslöser.** Im Anschluss ordnet `parse_cpp_file` jedem gefundenen Pin-Symbol genau eine Fähigkeit zu (Tabelle 6.3). Die Zuordnung erfolgt in fester Reihenfolge (`adc` vor `pwm` vor `i2c` vor `spi` vor `uart`); Symbole, die in keinem dieser Aufrufe vorkommen, erhalten die Standardfähigkeit `gpio`. Schließlich werden die `resource_triggers` des Hardware-Profils mit allen aufgerufenen Funktionen verglichen, und zwar exakt oder über eine durch einen Punkt abgegrenzte Endung (`fn == pat or fn.endswith("." + pat)`). So aktiviert `board.WiFi.begin()` das Modul `wifi`, ein unbeteiligtes `myWiFi.begin()` hingegen nicht.
 
 | Funktionsmuster im AST | Abgeleitete Fähigkeit | Bedeutung |
 | :--- | :---: | :--- |
 | Standard (z. B. `pinMode`, `digitalWrite`) | `gpio` | allgemeiner digitaler Ein-/Ausgang |
 | `analogRead` | `adc` | analoge Messung (per Alias auf `adc1`/`adc2` aufgelöst) |
 | `analogWrite`, `ledcAttach`, `ledcAttachPin` | `pwm` | Pulsweitenmodulation (Arduino oder ESP32-LEDC) |
-| `Wire*.begin`, `Wire*.setPins` *(oder `SDA`/`SCL`-Name bei aktivem `Wire`)* | `i2c` | teilbarer Zweidrahtbus |
+| `Wire*.begin`, `Wire*.setPins` *(oder `SDA`/`SCL`-Name bei verwendetem `Wire`)* | `i2c` | teilbarer Zweidrahtbus |
 | `SPI*.begin` | `spi` | teilbarer SPI-Bus |
 | `Serial1.begin`, `Serial2.begin` *(nur mit Ziffer)* | `uart` | Hardware-UART (abgegrenzt gegen USB-CDC `Serial.begin`) |
 
 *Tabelle 6.3: Zuordnung von Funktionsaufrufen zu Fähigkeiten.*
 
-Gemäß Invariante INV-02 durchsucht `parser.py` niemals den Rohtext mit regulären Ausdrücken. Alle vier im Modul eingesetzten `re`-Aufrufe arbeiten ausschließlich auf bereits vom Syntaxbaum isolierten Teilstrings (Tabelle 6.4).
+Gemäß Invariante INV-02 durchsucht `parser.py` niemals den Rohtext mit regulären Ausdrücken. Alle im Modul eingesetzten `re`-Aufrufe arbeiten ausschließlich auf Teilzeichenketten, die bereits aus dem Syntaxbaum herausgelöst wurden (Tabelle 6.4).
 
-| Zeile | Aufruf in `parser.py` | AST-isolierte Eingabe | Zweck |
+| Zeile | Aufruf in `parser.py` | Aus dem AST isolierte Eingabe | Zweck |
 | :---: | :--- | :--- | :--- |
 | 92 | `re.sub(r"//.*\|/\*.*?\*/", "", ..., flags=re.DOTALL)` | `preproc_arg` eines `#define` | entfernt Zeilen- und Blockkommentare hinter dem Zahlenwert |
 | 114 | `re.sub(r"\s+", "", _node_text(fn_node))` | Funktionsausdruck einer `call_expression` | normiert erlaubte Leerzeichen (z. B. `WiFi . begin`) |
 | 132–137 | `^Wire\d*\.(?:begin\|setPins)$`, `^SPI\d*\.begin$`, `^Serial\d+\.begin$` | normierter Funktionsname `fn_name` | erkennt nummerierte Busse (`Wire1`, `SPI2`, `Serial1`); `\d+` trennt `Serial1` von `Serial` |
-| 147 | `re.search(r"(?:^\|_)(?:SDA\|SCL)(?:_\|$)", name, re.IGNORECASE)` | Pin-Bezeichner bei aktivem `Wire` | erkennt I2C-Pins (`OLED_SDA`), falls `Wire.begin()` ohne Argumente aufgerufen wird |
+| 147 | `re.search(r"(?:^\|_)(?:SDA\|SCL)(?:_\|$)", name, re.IGNORECASE)` | Pin-Bezeichner bei verwendetem `Wire` | erkennt I2C-Pins (`OLED_SDA`), falls `Wire.begin()` ohne Argumente aufgerufen wird |
 
 *Tabelle 6.4: Lokale reguläre Ausdrücke im Parser.*
 
 ### 6.4 Solver
 
-Die Funktion `validate_with_z3` in `mcu_validator/solver.py` prüft die extrahierten Anforderungen zweistufig gegen das JSON-Profil (Abbildung 6.1).
+Die Funktion `validate_with_z3` in `mcu_validator/solver.py` prüft die extrahierten Anforderungen in zwei Stufen gegen das JSON-Profil (Abbildung 6.1).
 
 ```text
   Eingabe: (requests, active_resources, board_data)
@@ -1000,8 +1011,8 @@ Die Funktion `validate_with_z3` in `mcu_validator/solver.py` prüft die extrahie
 *Abbildung 6.1: Zweistufiger Ablauf in `validate_with_z3`.*
 
 Zwei Details in Stufe 1 erklären beobachtete Eigenheiten des Systems:
-- Bei einer Sperre durch `conflict_rules` (Zeile 62) prüft der Solver `matching_caps.issubset(forbidden_caps)`: Besitzt ein Pin für dieselbe Anforderung mehrere passende Teilfähigkeiten und nur eine davon ist gesperrt, gilt der Pin weiterhin als nutzbar; erst wenn *alle* passenden Teilfähigkeiten (oder der Pin als Nummer in `forbidden_pins`) gesperrt sind, wird ein Konflikt gemeldet.
-- In der Fehlermeldung der Zeile 64 gibt der Solver pauschal `Conflicts with active {active_resources}` aus, also die Liste aller aktiven Module statt nur des auslösenden Moduls. Bei aktivem `wifi` und `usb_serial` nennt die ADC2-Meldung daher beide Namen (vgl. Abschnitt 5.6, Listing 5.2).
+- Bei einer Sperre durch `conflict_rules` (Zeile 62) prüft der Solver `matching_caps.issubset(forbidden_caps)`: Besitzt ein Pin für dieselbe Anforderung mehrere passende Teilfähigkeiten und ist nur eine davon gesperrt, gilt der Pin weiterhin als nutzbar. Erst wenn *alle* passenden Teilfähigkeiten gesperrt sind oder die Pin-Nummer in `forbidden_pins` steht, wird ein Konflikt gemeldet.
+- In der Fehlermeldung (Zeile 64) gibt der Solver pauschal `Conflicts with active {active_resources}` aus, also die Liste aller aktiven Module statt nur des auslösenden Moduls. Bei aktivem `wifi` und `usb_serial` nennt die ADC2-Meldung daher beide Namen (vgl. Abschnitt 5.6, Listing 5.2).
 
 Werden in Stufe 1 ein oder mehrere Konflikte gefunden, baut Stufe 2 das MaxSMT-Optimierungsmodell auf (Listing 6.5).
 
@@ -1049,26 +1060,30 @@ Werden in Stufe 1 ein oder mehrere Konflikte gefunden, baut Stufe 2 das MaxSMT-O
 ```
 *Listing 6.5: Aufbau des MaxSMT-Modells im Solver (`mcu_validator/solver.py`, Z. 71–110).*
 
-Mathematisch lässt sich das Modell mit den Größen aus dem Symbolverzeichnis in drei Teile fassen. Mit der über `capability_aliases` aufgelösten Fähigkeitsmenge $A(c_i)$ bildet der Solver zunächst für jede Anforderung $r_i$ ($i \in \{1, \dots, n\}$) die Kandidatenmenge:
+Mathematisch lässt sich das Modell mit den Größen aus dem Symbolverzeichnis in drei Teile gliedern. Zunächst bildet der Solver für jede Anforderung $r_i$ ($i \in \{1, \dots, n\}$) die Kandidatenmenge:
 
 $$P_i = \Big\{\, p \in \mathcal{P} \;\Big|\; \neg\text{reserved}(p) \;\land\; p \notin \text{ForbiddenPins} \;\land\; \big(\text{caps}(p) \cap (A(c_i) \setminus \text{ForbiddenCaps})\big) \neq \emptyset \,\Big\}$$
 
-1. **Domänenbindung (hart):** Ist $P_i \neq \emptyset$, gilt $\bigvee_{p \in P_i} (v_i = p)$; andernfalls setzt das Programm als Notbehelf $v_i = -1$ (die damit verbundene Störanfälligkeit bei zwei unlösbaren Signalen zeigt Abschnitt 7.4, Experiment `e`).
+In Worten: Ein Pin kommt für ein Signal infrage, wenn er nicht reserviert ist, durch keine aktive Regel gesperrt wird und mindestens eine der benötigten, nicht gesperrten Fähigkeiten besitzt.
+
+1. **Domänenbindung (hart):** Ist $P_i \neq \emptyset$, gilt $\bigvee_{p \in P_i} (v_i = p)$; andernfalls setzt das Programm als Notbehelf $v_i = -1$ (welche Probleme dieser Notbehelf bei zwei unlösbaren Signalen verursacht, zeigt Abschnitt 7.4, Experiment `e`).
 2. **Paarweise Kopplung (hart, INV-04):** Für alle Paare $1 \le i < j \le n$ gilt:
    $$v_i = v_j \quad \text{falls } c_i = c_j \land c_i \in \text{shared\_capabilities} \land p_i^0 = p_j^0, \qquad \text{sonst } v_i \neq v_j.$$
    Ein globales `z3.Distinct(...)` wäre falsch, weil es geteilte I2C- oder SPI-Leitungen trennen würde; erst diese paarweise Fallunterscheidung hält zusammengehörige Bus-Signale auf demselben Pin.
 3. **Zielfunktion (weich, INV-05):** Z3 maximiert die gewichtete Summe:
    $$\max \sum_{i=1}^{n} \left( 100 \cdot \mathbb{I}[v_i = p_i^0] + \sum_{p \in P_i \cap S} 10 \cdot \mathbb{I}[v_i \neq p] \right)$$
-   Für ein gültig platziertes Signal auf einem Strapping-Pin liefert das Beibehalten $100$ Punkte minus den Verlust einer $10$-Punkte-Bedingung, also $+90$ Punkte Nettovorteil gegenüber einer Verschiebung. Damit bleibt ein bestehender gültiger Pin *immer* stehen, auch wenn er ein Strapping-Pin ist (etwa `STATUS_LED = 8` in `src/main.cpp`). Muss ein Signal hingegen ohnehin neu vergeben werden ($p_i^0 \notin P_i$ oder durch eine Doppelbelegung verdrängt), vermeidet es Strapping-Pins, um die $10$ Punkte pro Strapping-Pin nicht zu verlieren.
+   Für ein gültig platziertes Signal auf einem Strapping-Pin bringt das Beibehalten 100 Punkte ein und kostet den Verlust einer einzigen 10-Punkte-Bedingung; netto ist Beibehalten also 90 Punkte mehr wert als eine Verschiebung. Ein gültiger Pin wird daher nicht allein deshalb verschoben, weil er ein Strapping-Pin ist (etwa `STATUS_LED = 8` in `src/main.cpp`). Muss ein Signal ohnehin neu vergeben werden – weil sein Originalpin nicht in $P_i$ liegt oder es durch eine Doppelbelegung verdrängt wird –, meidet es Strapping-Pins, um die 10 Punkte nicht zu verlieren.
+
+> **Kurz erklärt:** Die Gewichte bilden eine klare Rangfolge. „Möglichst wenig ändern“ hat immer Vorrang; „Strapping-Pins meiden“ entscheidet nur zwischen Lösungen, die gleich viele Pins unverändert lassen.
 
 ### 6.5 Wer darf bleiben? Prioritäten bei gegenseitiger Pin-Blockade
 
-Eine nahe liegende Frage an die Logik lautet: *Wenn sich zwei Signale im Quelltext gegenseitig auf demselben Pin blockieren – welches Signal darf bleiben, und welches muss weichen?*
+Eine naheliegende Frage an die Logik lautet: *Wenn zwei Signale im Quelltext denselben Pin beanspruchen – welches darf bleiben, und welches muss weichen?*
 
-Im Programm ist nirgends eine feste Prioritätsliste nach Namen oder Signaltypen hinterlegt. In Stufe 1 meldet die Schleife lediglich das später angetroffene Signal als Konfliktauslöser. Über die eigentliche Reparatur entscheidet in Stufe 2 allein die globale Punktezahl aus Zielfunktion (3). Daraus ergeben sich drei klar unterscheidbare Fälle:
+Im Programm ist nirgends eine feste Prioritätsliste nach Namen oder Signaltypen hinterlegt. In Stufe 1 meldet die Schleife lediglich das später angetroffene Signal als Konfliktauslöser. Über die eigentliche Reparatur entscheidet in Stufe 2 allein die Gesamtpunktzahl der Zielfunktion (3). Daraus ergeben sich drei Fälle:
 
-1. **Fall 1 – Gleichwertige Einzelsignale (Gleichstand / Tie-Breaking).** Liegen etwa `BUZZER_PIN = 7` und `SERVO_PIN = 7` (beide `gpio`) auf demselben Pin, so stehen beiden dieselben 15 freien GPIOs zur Verfügung (darunter die drei Strapping-Pins `{2, 8, 9}`). Egal ob der Buzzer auf Pin 7 bleibt (+100 + 30) und der Servo auf einen Nicht-Strapping-Pin wie GPIO 10 ausweicht (+30) oder umgekehrt: Beide Lösungen erzielen exakt **160 Punkte**. Was dann passiert, wurde in Abschnitt 7.4 experimentell überprüft (Experimente `c` und `c2`): Anders als man intuitiv erwarten würde, entscheidet **nicht** die Deklarationsreihenfolge im C++-Code. Selbst wenn `SERVO_PIN` vor `BUZZER_PIN` deklariert wird, behält Z3 in beiden Fällen `BUZZER_PIN` auf GPIO 7 und verschiebt `SERVO_PIN` (einmal auf GPIO 10, im umgekehrten Test auf GPIO 20). Den Gleichstand löst also die interne Klausel- und Variablenordnung von `z3.Optimize` (MaxRes) auf. Für identische Eingaben und eine feste Z3-Version bleibt die Ausgabe aber deterministisch (fünf aufeinanderfolgende Läufe von Szenario 03 lieferten fünfmal denselben Hashwert).
-2. **Fall 2 – Geteilter Bus gegen einzelnes Störsignal („Bus-Trägheit“).** In Szenario 04 sind `OLED_SDA = 6` und `BME280_SDA = 6` über `v_OLED_SDA == v_BME280_SDA` gekoppelt, während `STATUS_LED = 6` ein einzelnes `gpio`-Signal ist. Beide Bus-Geräte bringen jeweils 100 Haltepunkte ein, zusammen also **200 Punkte** gegenüber nur **100 Punkten** der LED. Da auf dem ESP32-C3 für I2C nur die Pins `{6, 7, 8, 9}` infrage kommen (davon `{8, 9}` Strapping-Pins, also maximal $+20$ Strapping-Punkte je I2C-Signal) und für `STATUS_LED` `{2, 8, 9}` als Strapping-Pins in `allowed_pins` liegen (maximal $+30$ Punkte), zeigt Tabelle 6.5 die Gesamtpunkte: Die Kopplung schützt den Bus rechnerisch.
+1. **Fall 1 – Gleichwertige Einzelsignale (Gleichstand).** Liegen etwa `BUZZER_PIN = 7` und `SERVO_PIN = 7` (beide `gpio`, keine aktiven Module) auf demselben Pin, stehen beiden dieselben 15 GPIOs zur Verfügung (darunter die drei Strapping-Pins 2, 8 und 9). Ob der Buzzer auf Pin 7 bleibt (100 + 30) und der Servo auf einen Nicht-Strapping-Pin wie GPIO 10 ausweicht (+30) oder umgekehrt: Beide Lösungen erzielen für diese beiden Signale dieselbe Teilsumme von **160 Punkten**. Was dann geschieht, wurde in Abschnitt 7.4 experimentell überprüft (Experimente `c` und `c2`): Anders als man vermuten könnte, entscheidet **nicht** die Deklarationsreihenfolge im C++-Code. Auch wenn `SERVO_PIN` vor `BUZZER_PIN` deklariert wird, behält Z3 in beiden Fällen `BUZZER_PIN` auf GPIO 7 und verschiebt `SERVO_PIN` (einmal auf GPIO 10, im umgekehrten Test auf GPIO 20). Den Gleichstand löst also die interne Such- und Variablenordnung von `z3.Optimize` auf, die für den Nutzer nicht vorhersehbar ist. Für identische Eingaben und eine feste Z3-Version ist die Ausgabe aber reproduzierbar (fünf aufeinanderfolgende Läufe von Szenario 03 lieferten fünfmal denselben Hashwert der Ausgabe).
+2. **Fall 2 – Geteilter Bus gegen einzelnes Störsignal („Bus-Trägheit“).** In Szenario 04 sind `OLED_SDA = 6` und `BME280_SDA = 6` über $v_{\text{OLED\_SDA}} = v_{\text{BME280\_SDA}}$ gekoppelt, während `STATUS_LED = 6` ein einzelnes `gpio`-Signal ist. Die beiden Bus-Geräte bringen jeweils 100 Haltepunkte ein, zusammen also **200 Punkte** gegenüber nur **100 Punkten** der LED. Auf dem ESP32-C3 kommen für I2C nur die Pins 6, 7, 8 und 9 infrage (davon 8 und 9 Strapping-Pins, also maximal 20 Strapping-Punkte je I2C-Signal); für `STATUS_LED` liegen die Strapping-Pins 2, 8 und 9 in der Kandidatenmenge (maximal 30 Punkte). Tabelle 6.5 zeigt die Gesamtpunkte: Die Kopplung schützt den Bus rechnerisch.
 
 | Variante in Szenario 04 | Haltepunkte | Strapping-Vermeidung | Gesamtsumme | Ergebnis |
 | :--- | :---: | :---: | :---: | :--- |
@@ -1078,15 +1093,15 @@ Im Programm ist nirgends eine feste Prioritätsliste nach Namen oder Signaltypen
 
 *Tabelle 6.5: Punktebewertung in Szenario 04 (Bus gegen Einzelsignal).*
 
-3. **Fall 3 – Spezialist gegen Allrounder (indirekte Priorität durch knappe Pins).** Kollidieren bei aktivem WLAN ein analoger Sensor (`SOIL_SENSOR = 1`, braucht `adc1` aus `{0, 1, 2, 3, 4}`) und eine LED (`STATUS_LED = 1`, `gpio`), haben zunächst beide je 100 Haltepunkte. Sind jedoch die übrigen Nicht-Strapping-ADC1-Pins `0, 3, 4` bereits durch andere Sensoren belegt, bleibt für den Spezialisten als einziger Ausweichpin nur Strapping-Pin 2. Wiche der Sensor auf Pin 2 aus und bliebe die LED auf Pin 1, verlöre das Modell 10 Strapping-Punkte; weicht hingegen die LED auf einen freien Nicht-Strapping-Pin (z. B. GPIO 7) aus und der Sensor bleibt auf GPIO 1, gewinnt diese Variante **10 Punkte** mehr. Wäre auch Pin 2 bereits belegt, erzwängen die harten Regeln den Verbleib des Spezialisten sogar absolut. Experiment `f` und `f2` in Abschnitt 7.4 bestätigen diese Herleitung unabhängig von der Deklarationsreihenfolge im Code.
+3. **Fall 3 – Spezialist gegen Allrounder (indirekte Priorität durch knappe Pins).** Kollidieren bei aktivem WLAN ein analoger Sensor (`SOIL_SENSOR = 1`, braucht `adc1` aus {0, 1, 2, 3, 4}) und eine LED (`STATUS_LED = 1`, `gpio`), haben zunächst beide je 100 Haltepunkte. Sind jedoch die übrigen Nicht-Strapping-ADC1-Pins 0, 3 und 4 bereits durch andere Sensoren belegt, bleibt dem „Spezialisten“ als einziger Ausweichpin der Strapping-Pin 2. Wiche der Sensor auf Pin 2 aus und bliebe die LED auf Pin 1, gingen 10 Strapping-Punkte verloren. Weicht dagegen die LED auf einen freien Nicht-Strapping-Pin (z. B. GPIO 7) aus und bleibt der Sensor auf GPIO 1, erzielt diese Variante **10 Punkte** mehr. Wäre auch Pin 2 belegt, erzwängen bereits die harten Regeln, dass der Sensor bleibt. Die Experimente `f` und `f2` in Abschnitt 7.4 bestätigen diese Herleitung unabhängig von der Deklarationsreihenfolge.
 
 ### 6.6 Bericht und Reparatur-Prompt
 
 Das Modul `mcu_validator/cli.py` (49 Zeilen, Anhang E) lädt über `validate_file` das Hardware-Profil, ruft Parser und Solver auf, formatiert den Bericht mit `format_report` und beendet den Prozess bei SAT mit Rückgabewert 0 bzw. bei UNSAT mit Rückgabewert 1.
 
-Im `UNSAT`-Fall erzeugt `format_report` den Abschnitt `--- COPY THIS PROMPT BACK TO YOUR AI (LLM-MODULO) ---`. Neben der Liste aller Einzelkonflikte enthält er für **jedes** erkannte Signal entweder `Keep GPIO <p> (unchanged)` oder `Change GPIO <alt> -> GPIO <neu>`. Die expliziten `Keep`-Zeilen sind bewusst gesetzt: Gibt man einem Sprachmodell nur eine abstrakte Fehlerliste, ändert es erfahrungsgemäß oft auch unbeteiligte Konstanten ab.
+Im UNSAT-Fall erzeugt `format_report` den Abschnitt `--- COPY THIS PROMPT BACK TO YOUR AI (LLM-MODULO) ---`. Neben der Liste aller Einzelkonflikte enthält er für **jedes** erkannte Signal entweder `Keep GPIO <p> (unchanged)` oder `Change GPIO <alt> -> GPIO <neu>`. Die expliziten `Keep`-Zeilen sind bewusst gesetzt: Während der Entwicklung wurde beobachtet, dass Sprachmodelle bei einer bloßen Fehlerliste häufig auch unbeteiligte Konstanten ändern. Diese Beobachtung ist anekdotisch und wurde nicht systematisch untersucht.
 
-Die Paketdatei `mcu_validator/__init__.py` exportiert ausschließlich `parse_cpp_file`, `load_board_data` und `validate_with_z3` – nicht aber `.cli` (INV-06). Würde `__init__.py` das Submodul `.cli` bereits importieren, befände sich `mcu_validator.cli` beim Aufruf `python -m mcu_validator.cli` bereits in `sys.modules`, bevor Pythons `runpy`-Lader es als Hauptskript ausführt, was eine `RuntimeWarning` auslöst.
+Die Paketdatei `mcu_validator/__init__.py` exportiert ausschließlich `parse_cpp_file`, `load_board_data` und `validate_with_z3` – nicht aber `.cli` (INV-06). Würde `__init__.py` das Submodul `.cli` bereits importieren, befände sich `mcu_validator.cli` beim Aufruf `python -m mcu_validator.cli` schon in `sys.modules`, bevor Pythons `runpy`-Mechanismus es als Hauptskript ausführt; das löst eine `RuntimeWarning` aus.
 
 ### 6.7 Integration in PlatformIO
 
@@ -1144,20 +1159,26 @@ if not env.get("_MCU_VALIDATOR_RAN"):
 *Listing 6.6: Kern des PlatformIO-Hooks (`pio_hook.py`) und der Paketkonfiguration (`library.json`).*
 
 Vier Details lösen typische Schwierigkeiten im Build-Alltag:
-1. **`_MCU_VALIDATOR_RAN`:** Da das zugrunde liegende SCons-Skript in einem Build-Lauf mehrfach ausgewertet werden kann, verhindert dieses Flag auf `env` eine doppelte Prüfung.
-2. **Interpreter-Wahl und Erstinstallation:** PlatformIO nutzt intern eine eigene Python-Umgebung (`penv`). `shutil.which("py") or sys.executable` greift unter Windows auf den regulären Python-Launcher zurück und installiert die drei Abhängigkeiten (`z3-solver`, `tree-sitter`, `tree-sitter-cpp`) beim ersten Start automatisch nach.
-3. **`"srcFilter": ["-<*>"]`:** Die Bibliothek enthält unter `src/main.cpp` ein eigenes ESP32-C3-Demoprojekt. Ohne diesen Filter würde PlatformIO bei Fremdprojekten (etwa für einen STM32) versuchen, dieses Demoprojekt als Bibliotheksquelltext mitzukompilieren.
+1. **`_MCU_VALIDATOR_RAN`:** Da das zugrunde liegende SCons-Skript in einem Build-Lauf mehrfach ausgewertet werden kann, verhindert dieser Merker auf `env` eine doppelte Prüfung.
+2. **Interpreter-Wahl und Erstinstallation:** PlatformIO nutzt intern eine eigene Python-Umgebung (`penv`). `shutil.which("py") or sys.executable` greift unter Windows auf den regulären Python-Launcher zurück und installiert die drei Abhängigkeiten (`z3-solver`, `tree-sitter`, `tree-sitter-cpp`) beim ersten Start automatisch nach. Diese automatische Installation ist bequem, verändert aber die Python-Umgebung des Nutzers ohne Rückfrage; für den produktiven Einsatz wäre eine explizite Zustimmung oder eine isolierte Umgebung vorzuziehen.
+3. **`"srcFilter": ["-<*>"]`:** Die Bibliothek enthält unter `src/main.cpp` ein eigenes ESP32-C3-Demoprojekt. Ohne diesen Filter würde PlatformIO in fremden Projekten versuchen, dieses Demoprojekt als Bibliotheksquelltext mitzukompilieren.
 4. **`"export": { "include": [...] }`:** Begrenzt Registry-Pakete auf die zur Laufzeit nötigen Dateien und schließt Test- und Demo-Ordner aus.
+
+> **Zwischenfazit Kapitel 6:** Mit rund 380 Zeilen Python verbindet die Implementierung einen Tree-Sitter-Parser, eine zweistufige Prüfung und ein MaxSMT-Modell zu einer Build-Schranke. Die Prioritäten bei Konflikten ergeben sich nicht aus festen Regeln, sondern allein aus der Gewichtung der Zielfunktion.
 
 ---
 
 ## 7 Evaluation
 
-Dieses Kapitel überprüft das fertige System empirisch. Anders als ein reiner Regressionstest der eigenen Testsuite umfasst die Evaluation drei Säulen: (1) die automatisierte Testsuite des Repositories, (2) zwölf eigene Grenzfallexperimente zur gezielten Suche nach Schwachstellen sowie (3) getrennte Laufzeitmessungen.
+Dieses Kapitel überprüft das fertige System empirisch. Anders als ein bloßer Test der eigenen Beispielszenarien stützt sich die Evaluation auf drei Säulen: (1) die automatisierte Regressionssuite des Repositories, (2) gezielte Grenzfallexperimente zur Suche nach Schwachstellen sowie (3) getrennte Laufzeitmessungen.
 
 ### 7.1 Evaluationsdesign und Messumgebung
 
-Die Regressionstests (`tests/run_tests.py`) starten für jeden der neun Fälle den CLI-Einstiegspunkt `python -m mcu_validator.cli` in einem eigenen Subprozess und prüfen den Rückgabewert (0 für SAT, 1 für UNSAT). Ergänzend führt das eigens erstellte Versuchsskript `experiments.py` (Anhang G) zwölf gezielte Grenzfallsketche plus zwei synthetische Tests über die Python-Schnittstelle aus, um zu ermitteln, in welchen Fällen False Positives, False Negatives oder unerwartete Solver-Entscheidungen auftreten. Das Skript `timing.py` (Anhang G) misst schließlich sowohl die gesamte Wanduhr-Laufzeit eines CLI-Subprozesses (Median über $N = 10$ Läufe) als auch die reinen Ausführungszeiten der drei Phasen Laden, Parsen und Lösen im selben Prozess (Median über $M = 30$ Läufe). Alle Messungen erfolgten unter der in Tabelle 7.1 dokumentierten Umgebung.
+Die Regressionssuite (`tests/run_tests.py`) startet für jede der neun Prüfkonstellationen den CLI-Einstiegspunkt `python -m mcu_validator.cli` in einem eigenen Subprozess und prüft den Rückgabewert (0 für SAT, 1 für UNSAT).
+
+Ergänzend führt das Versuchsskript `experiments.py` (Anhang G) zwölf C++-Grenzfallsketche zu zehn Phänomenen sowie einen synthetischen Test (`e`) mit einer bzw. zwei unlösbaren Anforderungen direkt über die öffentliche Python-Schnittstelle aus. Ziel ist es festzustellen, wann das System einem **False Positive** (Fehlalarm: korrekter Code wird fälschlich als fehlerhaft gemeldet) oder einem **False Negative** (übersehener Fehler: fehlerhafter Code wird fälschlich als gültig akzeptiert) unterliegt oder unerwartete Solver-Entscheidungen trifft.
+
+Das Skript `timing.py` (Anhang G) misst schließlich sowohl die gesamte Wanduhr-Laufzeit eines CLI-Subprozesses (Median über $N = 10$ Läufe) als auch die reinen Ausführungszeiten der drei Phasen Laden, Parsen und Lösen innerhalb desselben Python-Prozesses (Median über $M = 30$ Läufe). Alle Messungen erfolgten unter der in Tabelle 7.1 dokumentierten Umgebung.
 
 | Komponente | Spezifikation |
 | :--- | :--- |
@@ -1172,7 +1193,7 @@ Die Regressionstests (`tests/run_tests.py`) starten für jeden der neun Fälle d
 
 ### 7.2 Regressionsszenarien
 
-Die Ausführung von `python tests/run_tests.py` bestand alle neun definierten Szenarien ohne Fehler (`9/9 tests passed!`, Rückgabewert 0). Tabelle 7.2 listet alle Fälle im Überblick.
+Die Ausführung von `python tests/run_tests.py` bestand alle neun definierten Prüfkonstellationen ohne Fehler (`9/9 tests passed!`, Rückgabewert 0). Geprüft werden `src/main.cpp` sowie sieben Szenarien aus `tests/scenarios/`, wobei Szenario 00 sowohl gegen `esp32-c3` als auch gegen `esp32-s3` läuft. Tabelle 7.2 listet alle Fälle im Überblick.
 
 | Nr. | Zielpfad | Board | Erwartet & Gemessen | Geprüfter Sachverhalt |
 | :---: | :--- | :---: | :---: | :--- |
@@ -1190,7 +1211,7 @@ Die Ausführung von `python tests/run_tests.py` bestand alle neun definierten Sz
 
 ### 7.3 Ausgewählte Szenarien im Detail
 
-Szenario 0 wurde bereits in Abschnitt 5.6 behandelt. Die Listings 7.1 bis 7.5 dokumentieren den vollständigen Quelltext und die tatsächliche CLI-Ausgabe der Szenarien 02 bis 06.
+Szenario 0 wurde bereits in Abschnitt 5.6 durchgängig vorgestellt. Die Listings 7.1 bis 7.5 dokumentieren den vollständigen Quelltext und die tatsächliche CLI-Ausgabe der Szenarien 02 bis 06.
 
 In **Szenario 02** (Listing 7.1) aktiviert `Serial.begin(115200)` das Modul `usb_serial`, wodurch GPIO 18 und 19 für den Schrittmotor gesperrt sind. `ENABLE_PIN` auf GPIO 6 bleibt unverändert, während `STEP_PIN` und `DIR_PIN` auf GPIO 21 und 1 verlegt werden.
 
@@ -1409,7 +1430,7 @@ Please regenerate the code using this exact Z3-verified pin assignment:
 
 ### 7.4 Grenzfallexperimente
 
-Während die Regressionssuite den angedachten Gut- und Fehlerfall prüft, untersucht `experiments.py` gezielt Konstrukte, bei denen das System an Grenzen stoßen könnte. Tabelle 7.3 fasst die Ergebnisse aller 13 Testfälle (12 C++-Beispiele plus die zweite Variante des Leere-Domänen-Tests `e`) auf dem Profil `esp32-c3` zusammen.
+Während die Regressionssuite den angedachten Gut- und Fehlerfall prüft, untersucht `experiments.py` gezielt Konstrukte, bei denen das System an Grenzen stoßen könnte. Insgesamt laufen zwölf C++-Grenzfallsketche zu zehn Phänomenen (darunter die umgekehrten Deklarationsreihenfolgen `c`/`c2` und `f`/`f2`) sowie ein synthetischer API-Test (`e`) mit ein bzw. zwei unlösbaren Signalen auf dem Profil `esp32-c3`. Tabelle 7.3 fasst die Ergebnisse zusammen.
 
 | ID | Getesteter Fall | Beobachtetes Ergebnis | Einordnung |
 | :--- | :--- | :--- | :--- |
@@ -1427,7 +1448,7 @@ Während die Regressionssuite den angedachten Gut- und Fehlerfall prüft, unters
 
 *Tabelle 7.3: Ergebnisse der Grenzfallexperimente auf `esp32-c3`.*
 
-Listing 7.6 zeigt zur Verdeutlichung die tatsächliche CLI-Ausgabe im Überbuchungsfall `d` (`pigeonhole.cpp`): Weil sechs paarweise verschiedene Signale nicht auf fünf `ADC1`-Pins passen, liefert `opt.check()` in Z3 `unsat`, `suggested` bleibt leer `{}`, und `format_report` gibt für jedes Signal `GPIO None` aus – für das Sprachmodell keine brauchbare Reparaturanweisung.
+Listing 7.6 zeigt zur Verdeutlichung die tatsächliche CLI-Ausgabe im Überbuchungsfall `d` (`pigeonhole.cpp`): Nach dem Schubfachprinzip lassen sich sechs paarweise verschiedene Signale nicht auf fünf `ADC1`-Pins verteilen. `opt.check()` in Z3 liefert daher berechtigterweise `unsat`, `suggested` bleibt leer `{}`, und `format_report` gibt für jedes Signal `GPIO None` aus – für das Sprachmodell keine brauchbare Reparaturanweisung.
 
 ```text
 =================================================================
@@ -1472,8 +1493,9 @@ Tabelle 7.4 dokumentiert die gemessenen Medianlaufzeiten aus `timing.py`. Zum Ve
 *Tabelle 7.4: Gemessene Laufzeiten (End-to-End als Subprozess sowie je Verifikationsphase im selben Prozess).*
 
 Die Messwerte bestätigen zwei Entwurfsannahmen deutlich:
-- **Geringer Zusatzaufwand im Build:** Jeder Aufruf bleibt unter 0,18 s und damit weit unter dem Zielwert aus NFA-02 (`< 1,0 s`). Rund 80 bis 90 % der End-to-End-Zeit (138 ms von 146–178 ms) entfallen auf den Start des Python-Prozesses und das Laden der nativen Bibliotheken.
-- **Wirksamkeit der Zweistufigkeit:** Bei allen `SAT`-Szenarien benötigt die eigentliche Prüfung (`Lösen`) 0,01–0,02 ms, weil Z3 gar nicht gestartet wird. Bei den `UNSAT`-Szenarien liegt die Z3-Optimierung bei 8,86–22,36 ms; das Parsen bleibt selbst über die drei Dateien von Szenario 06 bei 1,54 ms.
+
+- **Prozessstart dominiert, Gesamtzeit bleibt vernachlässigbar:** Jeder CLI-Lauf bleibt unter 0,18 s und damit weit unter dem Zielwert aus NFA-02 (`< 1,0 s`). Rund 80 bis 90 % der End-to-End-Zeit (138 ms von 146–178 ms) entfallen allein auf den Start des Python-Prozesses und das Laden der Bibliotheken (`z3`, `tree_sitter`, `tree_sitter_cpp`).
+- **Wirksamkeit der Zweistufigkeit:** Innerhalb desselben Prozesses dauert das Parsen selbst über die drei Dateien von Szenario 06 hinweg nur 1,54 ms. Bei allen `SAT`-Szenarien liegt die Prüfzeit (`Lösen`) bei 0,01–0,02 ms, weil Z3 in Stufe 1 gar nicht gestartet wird. Bei den `UNSAT`-Szenarien benötigt die Z3-Optimierung 8,86–22,36 ms.
 
 ### 7.6 Soll-Ist-Abgleich
 
@@ -1490,7 +1512,7 @@ Tabelle 7.5 prüft alle in Kapitel 4 gestellten Anforderungen und Invarianten an
 | FA-07 | Kollision vs. Bus | teilweise erfüllt | Schützt geteiltes I2C (Szenario 7), trennt aber weder `CS`/`SS` von `SPI`-Datenleitungen (`l`) noch `Wire` von `Wire1` (`k`) |
 | FA-08 | Minimale Reparatur | teilweise erfüllt | Optimal für gültige Probleminstanzen (Szenarien 2, 5, 6, 7, 9); bei Überbuchung (`d`) oder zwei unlösbaren Signalen (`e`) entsteht jedoch `GPIO None` |
 | FA-09 | Reparatur-Prompt | erfüllt | Gibt Diagnose sowie vollständige `Keep`/`Change`-Liste aus |
-| FA-10 | Build-Schranke und CLI | CLI erfüllt / Hook nicht lokal getestet | CLI und `library.json` geprüft; `pio` war auf der Messmaschine nicht installiert (Build-Schranke nur per Code-Inspektion in `pio_hook.py` und früheren Projektläufen belegt) |
+| FA-10 | Build-Schranke und CLI | CLI erfüllt / Hook nur per Inspektion | CLI und `library.json` geprüft; `pio` war auf der Messmaschine nicht installiert (Build-Schranke über `pio_hook.py` nur per Code-Inspektion und frühere Projektläufe belegt) |
 | NFA-01–NFA-07 | Qualitätsanforderungen | erfüllt | 0 chip-spezifische Einträge im Python-Code, E2E < 0,18 s, 337/379 Zeilen Python, `runpy`-frei, CI mit Python `3.12` vorhanden |
 | INV-01–INV-06 | Architektur-Invarianten | erfüllt | Alle sechs Invarianten im aktuellen Codebestand eingehalten |
 
@@ -1500,36 +1522,37 @@ Tabelle 7.5 prüft alle in Kapitel 4 gestellten Anforderungen und Invarianten an
 
 Für die wissenschaftliche Bewertung sind die Grenzen der Aussagekraft (*Threats to Validity*) offen zu benennen:
 
-- **Interne Gültigkeit.** Prozess-Startzeiten unter Windows schwanken durch Hintergrundprozesse und Festplatten-Cache. Durch zehn bzw. dreißig Wiederholungen, Auswertung des Medians sowie die Trennung in End-to-End- und In-Process-Zeiten ist dieser Einfluss kontrolliert.
-- **Externe Gültigkeit.** Alle neun Regressionsszenarien und zwölf Grenzfalltests wurden vom Verfasser erstellt. Es liegt bislang **kein** empirischer Vergleich über eine größere Stichprobe frei von Sprachmodellen erzeugter Embedded-Projekte (z. B. mit Messung der Erfolgsquote mit vs. ohne `mcu-pin-solver`) vor. Außerdem sind bisher nur zwei Espressif-Chips modelliert; weitere Architekturen wie RP2040 oder STM32 sind nur konzeptionell vorbereitet.
-- **Konstruktgültigkeit.** Das Ergebnis `SAT` beweist nur, dass die vom Parser extrahierten Signale gegen das hinterlegte JSON-Profil zulässig sind – nicht, dass der C++-Code im Übrigen frei von Pin-Fehlern oder elektrischen Problemen ist.
+- **Interne Gültigkeit** *(Stimmen die Messungen innerhalb des Versuchs ohne Verfälschung durch Zufall oder Störfaktoren?)*. Prozess-Startzeiten unter Windows schwanken durch Hintergrundprozesse und Festplatten-Cache. Durch zehn bzw. dreißig Wiederholungen, Auswertung des Medians sowie die Trennung in End-to-End- und In-Process-Zeiten ist dieser Einfluss kontrolliert.
+- **Externe Gültigkeit** *(Lassen sich die Ergebnisse auf reale Projekte, weitere Chips und echten LLM-Code verallgemeinern?)*. Alle neun Regressionsszenarien und die Grenzfalltests wurden vom Verfasser erstellt. Es liegt bislang **kein** empirischer Vergleich über eine größere Stichprobe frei von Sprachmodellen erzeugter Embedded-Projekte (z. B. mit Messung der Erfolgsquote mit vs. ohne `mcu-pin-solver`) vor. Außerdem sind bisher nur zwei Espressif-Chips modelliert; weitere Architekturen wie RP2040 oder STM32 sind nur konzeptionell vorbereitet.
+- **Konstruktgültigkeit** *(Misst das Werkzeug tatsächlich Freiheit von Pin-Fehlern, wie der Begriff „Verifikation“ nahelegt?)*. Das Ergebnis `SAT` beweist lediglich, dass die vom Parser extrahierten Signale gegen das hinterlegte JSON-Profil zulässig sind – nicht, dass der C++-Code im Übrigen frei von Pin-Fehlern (z. B. über direkte Zahlenliterale) oder elektrischen Problemen ist.
 
 ---
+
 ## 8 Diskussion, Grenzen und Ausblick
 
 ### 8.1 Diskussion der Ergebnisse
 
-Die Evaluation bestätigt die Tragfähigkeit der gewählten neuro-symbolischen Arbeitsteilung: Ohne installierten Cross-Compiler und ohne eigene Konfigurationsdateien im Nutzerprojekt findet `mcu-pin-solver` die fünf definierten Fehlerklassen projektweit über Header und Quelldateien hinweg. Mit einer End-to-End-Laufzeit zwischen 146 ms und 178 ms (davon unter 2 ms im `SAT`-Fall und rund 9 bis 23 ms bei Z3-Optimierung) bleibt der Eingriff im Build-Alltag praktisch unbemerkt. Ebenso belegt der Vergleich von Szenario 0 auf ESP32-C3 (`UNSAT`) und ESP32-S3 (`SAT`), dass sich die Prüfregeln sauber von der Programmlogik trennen lassen.
+Die Evaluation bestätigt die Tragfähigkeit der gewählten neuro-symbolischen Arbeitsteilung: Ohne installierten Cross-Compiler und ohne eigene Konfigurationsdateien im Nutzerprojekt findet `mcu-pin-solver` die fünf definierten Fehlerklassen projektweit über Header und Quelldateien hinweg. Mit einer End-to-End-Laufzeit zwischen 146 ms und 178 ms (davon unter 2 ms im `SAT`-Fall und rund 9 bis 23 ms bei Z3-Optimierung) bleibt die Prüfung im Build-Alltag praktisch unbemerkt. Ebenso belegt der Vergleich von Szenario 0 auf ESP32-C3 (`UNSAT`) und ESP32-S3 (`SAT`), dass sich die Prüfregeln sauber von der Programmlogik trennen lassen.
 
-Gleichzeitig zeigen die Grenzfallexperimente den Preis der Entwurfsentscheidungen aus Kapitel 5. Weil bewusst auf `tree-sitter-cpp` ohne Präprozessor und ohne Typauflösung eines Compilers gesetzt wurde, bleiben Konstrukte außerhalb des schmalen syntaktischen Suchmusters unberücksichtigt oder werden fehlinterpretiert. Diese Lücken sind keine zufälligen Programmierfehler, sondern unmittelbare Folgen des Kompromisses zwischen Portabilität (`NFA-03`), Kompaktheit (`NFA-07`) und semantischer Tiefe.
+Gleichzeitig zeigen die Grenzfallexperimente den Preis der Entwurfsentscheidungen aus Kapitel 5. Weil Entscheidung 1 bewusst auf `tree-sitter-cpp` ohne Präprozessor und ohne Typauflösung eines Compilers gesetzt hat, bleiben Konstrukte außerhalb des schmalen syntaktischen Suchmusters unberücksichtigt oder werden fehlinterpretiert. Auch die kompakte Modellierung in Z3 (Entscheidung 2) und die Vereinfachung der JSON-Profile (Entscheidung 4) ziehen konkrete Einschränkungen nach sich. Diese Lücken sind keine zufälligen Programmierfehler, sondern unmittelbare Folgen des Kompromisses zwischen Portabilität (NFA-03), Kompaktheit (NFA-07) und semantischer Tiefe.
 
 ### 8.2 Grenzen des Systems
 
 Auf Basis von Code-Inspektion und den Experimenten aus Abschnitt 7.4 lassen sich acht konkrete Systemgrenzen benennen (Tabelle 8.1):
 
 1. **Direkte Zahlenliterale (*Magic Numbers*).** Da der Parser in `call_expression` nur `identifier`-Knoten sammelt, bleiben Aufrufe wie `pinMode(12, OUTPUT);` oder `analogRead(5);` ohne Konstante völlig unbemerkt (`a_magic_numbers`, False Negative).
-2. **Lokale `int`-Zähler und unberücksichtigte Deklarationstypen.** Eine gewöhnliche Zählervariable wie `int blinkCount = 0;` oder `uint8_t retries = 12;` außerhalb eines `for`-Kopfes erfüllt alle AST-Bedingungen und wird als Pin gewertet (`b_local_counter`, False Positive; in `src/main.cpp` blieb `counter` lediglich dank `unsigned long` außen vor). Umgekehrt werden `gpio_num_t`, Pin-Arrays (`int pins[] = {...}`), `enum`-Definitionen sowie berechnete Makros wie `#define LED (BASE + 2)` nicht aufgelöst (`i_constexpr_and_gpio_num_t`).
+2. **Ungefilterte Ganzzahlkonstanten, lokale Zähler und fehlende Deklarationstypen.** Der Parser behandelt *jede* passende `#define NAME ZAHL`- oder `int`/`uint8_t`-Konstante als Pin-Kandidaten – unabhängig davon, ob sie überhaupt in einem Pin-Aufruf wie `pinMode` verwendet wird. Dadurch lösen fachfremde Konstanten wie `#define BAUD_RATE 115200` oder lokale Zähler wie `int blinkCount = 0;` und `uint8_t retries = 12;` außerhalb eines `for`-Kopfes Fehlalarme aus (`b_local_counter`, False Positive; in `src/main.cpp` blieb `counter` lediglich dank des Typs `unsigned long` außen vor). Umgekehrt werden `gpio_num_t`, Pin-Arrays (`int pins[] = {...}`), `enum`-Definitionen sowie berechnete Makros wie `#define LED (BASE + 2)` nicht aufgelöst (`i_constexpr_and_gpio_num_t`).
 3. **Präprozessor-Verzweigungen (`#ifdef` / `#else`).** Tree-Sitter führt keinen Präprozessor aus und besucht alle Zweige im Baum. Alternative Pin-Belegungen für verschiedene Board-Varianten innerhalb einer `#ifdef`-Weiche erscheinen daher gleichzeitig als widersprüchliche Pin-Definitionen (`j_ifdef_both_branches`, False Positive).
 4. **Pin-Übergabe in Klassenkonstruktoren.** Treiberobjekte wie `DHT dht(DHT_PIN, DHT22);` oder `Adafruit_SSD1306 display(..., OLED_RESET);` übergeben Pins bereits bei der Deklaration. Weil der Parser keine Konstruktor-Fähigkeiten zuordnet, werden solche Signale pauschal nur als `gpio` geprüft.
 5. **Rollen-Überdeckung durch die `if/elif`-Kaskade.** Die Zuordnung in `parser.py` vergibt für jedes Pin-Symbol genau eine Fähigkeit in fester Priorität (`adc` vor `pwm` vor `i2c` vor `spi` vor `uart` vor `gpio`). Wird ein Symbol fälschlich doppelt verwendet – etwa in `Wire.begin(MY_PIN, MY_SCL)` und `analogRead(MY_PIN)` –, verdeckt `adc` die I2C-Rolle, und Z3 kann einen ungeeigneten Ersatz-Pin ohne I2C vorschlagen (`h_role_shadowing`).
 6. **SPI-Chip-Select (`CS`/`SS`) und getrennte Bus-Controller (`Wire` vs. `Wire1`).** Alle Argumente von `SPI*.begin(...)` erhalten dieselbe teilbare Fähigkeit `spi`. Während sich Takt (`SCK`) und Daten (`MISO`, `MOSI`) teilen lassen, muss eine Chip-Select-Leitung je Gerät exklusiv bleiben (`l_spi_two_cs_same_pin`). Ebenso unterscheidet der Solver bei `i2c`-Signalen nicht, zu welchem Bus-Controller sie gehören, sodass zwei getrennte I2C-Instanzen (`Wire` und `Wire1`) fälschlich auf denselben Pins akzeptiert werden (`k_wire_vs_wire1_same_pin`).
 7. **Schubfachprinzip und der `-1 != -1`-Randfall in `solver.py`.** Übersteigt die Zahl der Signale die verfügbaren Pins einer Spezialkategorie (z. B. sechs Analogsensoren bei aktivem WLAN auf fünf `ADC1`-Pins, `d_pigeonhole_6_adc_wifi`), liefert Z3 berechtigterweise `unsat` und `suggested = {}` (`GPIO None` für alle Signale), ohne auf die ausgeschöpfte Hardware-Kapazität hinzuweisen. Ähnliches geschieht schon bei *zwei* unmöglichen Signalen mit leerer Kandidatenmenge ($P_A = P_B = \emptyset$): Weil Zeile 88 beide fest auf `-1` setzt, die Paar-Schleife aber weiterhin `var_a != var_b` verlangt (`e_empty_domain`), kippt das gesamte Modell in `unsat`, und selbst reparierbare übrige Pins verlieren ihren Vorschlag.
-8. **Abdeckung und Vereinfachung in den JSON-Profilen.** Bisher liegen nur Profile für **ESP32-C3** und **ESP32-S3** vor. Außerdem fehlen Schema-Felder für reine Eingangs-Pins (`input_only`, z. B. GPIO 34–39 beim klassischen ESP32), Kanalbudgets (maximale Anzahl gleichzeitiger PWM-Kanäle) und elektrische Beschaltungsvorgaben an Strapping-Pins. Zudem vereinfacht jedes Profil die Hardware-Realität: Wie ein Blick in die aktuelle ESP-IDF-Dokumentation zeigt [[9]](#ref-9), ist `ADC2` auf dem ESP32-C3 im neueren `adc_oneshot`-Treiber aufgrund von Hardware-Instabilitäten sogar unabhängig von WLAN standardmäßig deaktiviert und erfordert zur Nutzung das explizite Kconfig-Flag `CONFIG_ADC_ONESHOT_FORCE_USE_ADC2_ON_C3`. Ein JSON-Profil, das `ADC2` nur bei aktivem WLAN sperrt, bildet diese Treiber- bzw. Silizium-Einschränkung noch nicht ab.
+8. **Abdeckung und Vereinfachung in den JSON-Profilen.** Bisher liegen nur Profile für **ESP32-C3** und **ESP32-S3** vor. Außerdem fehlen Schema-Felder für reine Eingangs-Pins (`input_only`, z. B. GPIO 34–39 beim klassischen ESP32), Kanalbudgets (maximale Anzahl gleichzeitiger PWM-Kanäle) und elektrische Beschaltungsvorgaben an Strapping-Pins. Wie in Abschnitt 6.2 erwähnt, schränken die Profile zudem Busse wie I2C und SPI konservativ auf einzelne Beispielpins ein, obwohl die GPIO-Matrix technisch freier belegbar ist. Umgekehrt vereinfachen die Profile Hardware-Einschränkungen: Wie ein Blick in die aktuelle ESP-IDF-Dokumentation zeigt [[9]](#ref-9), ist `ADC2` auf dem ESP32-C3 im neueren `adc_oneshot`-Treiber aufgrund von Hardware-Instabilitäten unabhängig von WLAN standardmäßig deaktiviert und erfordert zur Nutzung das explizite Kconfig-Flag `CONFIG_ADC_ONESHOT_FORCE_USE_ADC2_ON_C3`. Ein JSON-Profil, das `ADC2` nur bei aktivem WLAN sperrt, bildet diese Treiber- bzw. Silizium-Einschränkung noch nicht ab.
 
 | Nr. | Grenze | Ort im System | Beleg (Abschnitt 7.4) | Auswirkung | Möglicher Lösungsansatz |
 | :---: | :--- | :--- | :--- | :--- | :--- |
 | 1 | Direkte Zahlen (*Magic Numbers*) | `parser.py` | Experiment `a` | False Negative | `number_literal`-Argumente mit Zeilenposition erfassen |
-| 2 | Lokale Zähler & fehlende Typen | `parser.py` | Experiment `b`, `i` | False Positive bzw. Negative | Variablen innerhalb von Funktionen nur bei Nutzung in Pin-Aufrufen zählen; `gpio_num_t` ergänzen |
+| 2 | Ungefilterte Konstanten, lokale Zähler & fehlende Typen | `parser.py` | Experiment `b`, `i` | False Positive bzw. Negative | Konstanten nur bei Nutzung in Pin-Aufrufen zählen; `gpio_num_t` ergänzen |
 | 3 | `#ifdef` / `#else`-Zweige | `parser.py` | Experiment `j` | False Positive | Aktive Makro-Zweige filtern oder getrennt prüfen |
 | 4 | Klassenkonstruktoren | `parser.py` | Code-Inspektion | Nur `gpio`-Prüfung | Bekannte Konstruktor-Muster in Fähigkeitszuordnung aufnehmen |
 | 5 | Rollen-Überdeckung (`if/elif`) | `parser.py` | Experiment `h` | Falscher Ersatzvorschlag | Fähigkeiten pro Symbol als Menge statt Einzelwert führen |
@@ -1549,8 +1572,8 @@ Ein konkretes Beispiel aus der Arbeit an diesem Dokument belegt das: Ein früher
 
 Aus den gewonnenen Befunden ergeben sich vier nächste Ausbaustufen:
 
-1. **Behebung der gefundenen Parser- und Solver-Lücken.** Die in Tabelle 8.1 benannten Korrekturen lassen sich schrittweise und abwärtskompatibel umsetzen – allen voran das Ignorieren unbenutzter lokaler Zählervariablen (um False Positives zu vermeiden), die Trennung der SPI-Chip-Select-Leitung, die Entschärfung des `-1 != -1`-Fehlers sowie eine verständliche Kapazitätswarnung beim Schubfachprinzip.
-2. **Automatisierter Reparatur-Regelkreis.** Über eine optionale Flagge (etwa `--autofix`) oder eine MCP-Werkzeugschnittstelle könnte der Build-Hook das Sprachmodell bei `UNSAT` direkt ansteuern und geänderte Konstanten mit begrenzter Wiederholungszahl (z. B. maximal drei Durchläufen gegen Endlosschleifen) selbst einpflegen.
+1. **Behebung der gefundenen Parser- und Solver-Lücken.** Die in Tabelle 8.1 benannten Korrekturen lassen sich schrittweise und abwärtskompatibel umsetzen – allen voran das Ausfiltern nicht als Pin verwendeter Konstanten (um False Positives durch Zähler oder Baudraten zu vermeiden), die Trennung der SPI-Chip-Select-Leitung, die Entschärfung des `-1 != -1`-Fehlers sowie eine verständliche Kapazitätswarnung beim Schubfachprinzip.
+2. **Automatisierter Reparatur-Regelkreis.** Über eine optionale Flagge (etwa `--autofix`) oder eine Werkzeugschnittstelle (z. B. über das Model Context Protocol, MCP) könnte der Build-Hook das Sprachmodell bei `UNSAT` direkt ansteuern und geänderte Konstanten mit begrenzter Wiederholungszahl (z. B. maximal drei Durchläufen gegen Endlosschleifen) selbst einpflegen.
 3. **Erweiterung des Chip-Katalogs und JSON-Schemas.** Ergänzung verifizierter Profile für den klassischen ESP32, ESP32-C6, RP2040 und ausgewählte STM32-Varianten inklusive optionaler Felder wie `input_only` und Kanalbudgets.
 4. **Empirische Evaluation an realem LLM-Code.** Systematischer Vergleich über mehrere gängige Sprachmodelle anhand eines standardisierten Satzes von Embedded-Aufgaben mit Messung der Kompilier- und Hardware-Korrektheitsrate vor und nach Einsatz von `mcu-pin-solver`.
 
@@ -1560,11 +1583,11 @@ Aus den gewonnenen Befunden ergeben sich vier nächste Ausbaustufen:
 
 Die vorliegende Arbeit hat ein datengetriebenes Pre-Build-Werkzeug zur Prüfung und Reparatur von GPIO-Pin-Belegungen in Embedded-C++-Code entworfen, implementiert und experimentell untersucht. Die drei einleitenden Forschungsfragen lassen sich abschließend wie folgt beantworten:
 
-- **Zu FF1 (Extraktion ohne Ziel-Toolchain):** Mit `tree-sitter-cpp` lassen sich `#define`-Makros, Konstanten, Funktionsaufrufe und Peripherie-Auslöser über verteilte `include/`- und `src/`-Dateien hinweg schnell (unter 2 ms für das Beispielprojekt) und ohne installierte Compiler-Header auslesen. Kommentare, Zeichenketten und `for`-Schleifenvariablen erzeugen dabei keine Fehlalarme. Die Entscheidung gegen ein vollständiges Compiler-Frontend bringt jedoch klare Grenzen mit sich: Direkte Zahlenliterale, lokale Zählervariablen außerhalb von Schleifen und `#ifdef`-Alternativen werden in Version 0.1.0 nicht korrekt aufgelöst.
-- **Zu FF2 (Trennung von Wissen und MaxSMT-Reparatur):** Die Auslagerung sämtlicher Pin-Daten und Konfliktregeln in JSON-Profile (`boards/*.json`) entkoppelt die Prüflogik vollständig vom Zielchip, wie derselbe Quelltext auf ESP32-C3 (`UNSAT`) und ESP32-S3 (`SAT`) zeigt. Das zweistufige Verfahren in `z3.Optimize` liefert im Fehlerfall vollständige Einzeldiagnosen in Stufe 1 und berechnet in Stufe 2 unter paarweiser Bus-Kopplung (`v_a == v_b`) und gewichteten Zielen (`100` für Originalpins gegen `10` für Strapping-Meidung) nachweisbar optimale Ersatzbelegungen im Bereich von wenigen Millisekunden.
-- **Zu FF3 (PlatformIO-Integration):** Über den SCons-Pre-Build-Hook `pio_hook.py` und die Isolation in `library.json` (`"srcFilter": ["-<*>"]`) lässt sich die Prüfung vor den C++-Compiler schalten, stoppt fehlerhafte Builds via `env.Exit(1)` und erzeugt einen Reparatur-Prompt mit expliziten `Keep`- und `Change`-Anweisungen. Die lokale PlatformIO-CLI-Ausführung konnte auf dem Testsystem zwar nicht unmittelbar nachgeholt werden, die CLI-Pipeline ist jedoch durch neun automatisierte Testszenarien abgesichert.
+- **Zu FF1 (Extraktion ohne Ziel-Toolchain):** Mit `tree-sitter-cpp` lassen sich `#define`-Makros, Konstanten, Funktionsaufrufe und Peripherie-Auslöser über verteilte `include/`- und `src/`-Dateien hinweg sehr schnell (unter 2 ms im selben Prozess für das dreiteilige Beispielprojekt) und ohne installierte Compiler-Header auslesen. Kommentare, Zeichenketten und `for`-Schleifenvariablen erzeugen dabei keine Fehlalarme. Die Entscheidung gegen ein vollständiges Compiler-Frontend bringt jedoch klare Grenzen mit sich: Direkte Zahlenliterale, lokale Zählervariablen oder unbeteiligte Ganzzahlkonstanten sowie `#ifdef`-Alternativen werden in Version 0.1.0 nicht korrekt aufgelöst.
+- **Zu FF2 (Trennung von Wissen und MaxSMT-Reparatur):** Die Auslagerung sämtlicher Pin-Daten und Konfliktregeln in JSON-Profile (`boards/*.json`) entkoppelt die Prüflogik vollständig vom Zielchip, wie derselbe Quelltext auf ESP32-C3 (`UNSAT`) und ESP32-S3 (`SAT`) zeigt. Jeder beliebige Mikrocontroller lässt sich dadurch ohne Änderung am Python-Code über eine neue JSON-Datei hinzufügen. Das zweistufige Verfahren in `z3.Optimize` liefert im Fehlerfall vollständige Einzeldiagnosen in Stufe 1 und berechnet in Stufe 2 unter paarweiser Bus-Kopplung ($v_a = v_b$) und gewichteten Zielen (100 Punkte für Originalpins gegen 10 Punkte für Strapping-Meidung) nachweisbar optimale Ersatzbelegungen im Bereich von rund 9 bis 23 ms. Grenzen zeigen sich dort, wo getrennte Bus-Instanzen (`Wire` vs. `Wire1`), exklusive SPI-Chip-Select-Leitungen oder unlösbare Signalkombinationen (`GPIO None`) detaillierter modelliert werden müssten.
+- **Zu FF3 (PlatformIO-Integration):** Über den SCons-Pre-Build-Hook `pio_hook.py` und die Isolation in `library.json` (`"srcFilter": ["-<*>"]`) lässt sich die Prüfung vor den C++-Compiler schalten, stoppt fehlerhafte Builds via `env.Exit(1)` und erzeugt einen Reparatur-Prompt mit expliziten `Keep`- und `Change`-Anweisungen. Die lokale PlatformIO-CLI-Ausführung konnte auf dem Testsystem zwar nicht unmittelbar nachgeholt werden, die CLI-Pipeline ist jedoch durch neun automatisierte Testszenarien abgesichert und arbeitet im Median unter 0,18 s.
 
-Insgesamt zeigt die Arbeit am konkreten System, dass das neuro-symbolische LLM-Modulo-Prinzip für statische Hardware-Regeln im Embedded-Prototyping praktisch nutzbar ist: Das Sprachmodell übernimmt den schnellen Code-Entwurf, während ein kleiner deterministischer Syntaxbaum-Parser und ein formaler Solver die Einhaltung physikalischer Pin-Grenzen erzwingen.
+Insgesamt zeigt die Arbeit am konkreten System, dass das neuro-symbolische LLM-Modulo-Prinzip für statische Hardware-Regeln im Embedded-Prototyping praktisch nutzbar ist: Das Sprachmodell übernimmt den schnellen Code-Entwurf, während ein kompakter Syntaxbaum-Parser und ein formaler Solver die Einhaltung physikalischer Pin-Grenzen erzwingen.
 
 ---
 
@@ -1583,10 +1606,14 @@ Insgesamt zeigt die Arbeit am konkreten System, dass das neuro-symbolische LLM-M
 - <a id="ref-11"></a>**[11] Garcez, A. d'Avila, & Lamb, L. C. (2023):** *Neurosymbolic AI: The 3rd Wave.* Artificial Intelligence Review, 56(11), S. 12387–12406, Springer. DOI: `10.1007/s10462-023-10448-w`.
 - <a id="ref-12"></a>**[12] Hopcroft, J. E., Motwani, R., & Ullman, J. D. (2006):** *Introduction to Automata Theory, Languages, and Computation* (3. Aufl.). Addison-Wesley, Boston.
 - <a id="ref-13"></a>**[13] Huang, J., Chen, X., Mishra, S., Zheng, H. S., Yu, A. W., Song, X., & Zhou, D. (2024):** *Large Language Models Cannot Self-Correct Reasoning Yet.* In: *Twelfth International Conference on Learning Representations (ICLR 2024)*.
-- <a id="ref-14"></a>**[14] Kambhampati, S., Valmeekam, K., Guan, L., Verma, M., Stechly, K., Bhambri, S., Saldyt, L., & Murthy, A. (2024):** *LLMs Can't Plan, But Can Help Planning in LLM-Modulo Frameworks.* In: *Proceedings of the 41st International Conference on Machine Learning (ICML 2024)*, PMLR Bd. 235, S. 22895–22907.
-- <a id="ref-15"></a>**[15] Narodytska, N., & Bacchus, F. (2014):** *Maximum Satisfiability Using Core-Guided MaxSAT Resolution.* In: *Proceedings of the Twenty-Eighth AAAI Conference on Artificial Intelligence (AAAI 2014)*, S. 2717–2723.
-- <a id="ref-16"></a>**[16] PlatformIO (2024):** *PlatformIO Core Documentation – Project Configuration (`platformio.ini`), Library Manifest (`library.json`) and Advanced Scripting.* Online-Dokumentation: `https://docs.platformio.org/`.
-- <a id="ref-17"></a>**[17] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017):** *Attention Is All You Need.* In: *Advances in Neural Information Processing Systems (NeurIPS 2017)*, Bd. 30.
+- <a id="ref-14"></a>**[14] ISO/IEC (2011):** *ISO/IEC 25010:2011 – Systems and software engineering – Systems and software Quality Requirements and Evaluation (SQuaRE) – System and software quality models.* International Organization for Standardization, Genf.
+- <a id="ref-15"></a>**[15] Kambhampati, S., Valmeekam, K., Guan, L., Verma, M., Stechly, K., Bhambri, S., Saldyt, L., & Murthy, A. (2024):** *LLMs Can't Plan, But Can Help Planning in LLM-Modulo Frameworks.* In: *Proceedings of the 41st International Conference on Machine Learning (ICML 2024)*, PMLR Bd. 235, S. 22895–22907.
+- <a id="ref-16"></a>**[16] Narodytska, N., & Bacchus, F. (2014):** *Maximum Satisfiability Using Core-Guided MaxSAT Resolution.* In: *Proceedings of the Twenty-Eighth AAAI Conference on Artificial Intelligence (AAAI 2014)*, S. 2717–2723.
+- <a id="ref-17"></a>**[17] PlatformIO (2024):** *PlatformIO Core Documentation – Project Configuration (`platformio.ini`), Library Manifest (`library.json`) and Advanced Scripting.* Online-Dokumentation: `https://docs.platformio.org/`.
+- <a id="ref-18"></a>**[18] Rust Embedded Working Group (2024):** *embedded-hal: A Hardware Abstraction Layer (HAL) for embedded systems.* Online-Dokumentation: `https://docs.rs/embedded-hal/`.
+- <a id="ref-19"></a>**[19] STMicroelectronics (2024):** *STM32CubeMX: STM32Cube initialization code generator.* Online-Dokumentation: `https://www.st.com/en/development-tools/stm32cubemx.html`.
+- <a id="ref-20"></a>**[20] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017):** *Attention Is All You Need.* In: *Advances in Neural Information Processing Systems (NeurIPS 2017)*, Bd. 30.
+- <a id="ref-21"></a>**[21] Zephyr Project (2024):** *Zephyr Project Documentation – Devicetree Guide.* Online-Dokumentation: `https://docs.zephyrproject.org/latest/build/dts/index.html`.
 
 ---
 
